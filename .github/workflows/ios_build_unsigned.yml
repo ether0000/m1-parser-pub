@@ -36,40 +36,27 @@ jobs:
       # 4. 關鍵步驟：確保 Firebase iOS 設定存在 (避免編譯失敗)
       - name: Setup Mock Firebase Config
         run: |
+          mkdir -p ios/Runner
           if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
             echo "Creating dummy GoogleService-Info.plist to satisfy build"
-            cat <<EOF > ios/Runner/GoogleService-Info.plist
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>API_KEY</key>
-  <string>dummy</string>
-  <key>GCM_SENDER_ID</key>
-  <string>dummy</string>
-  <key>PLIST_VERSION</key>
-  <string>1</string>
-  <key>BUNDLE_ID</key>
-  <string>com.example.flutterQuizApp</string>
-  <key>PROJECT_ID</key>
-  <string>dummy</string>
-  <key>STORAGE_BUCKET</key>
-  <string>dummy</string>
-  <key>IS_ADS_ENABLED</key>
-  <false/>
-  <key>IS_ANALYTICS_ENABLED</key>
-  <false/>
-  <key>IS_APPINVITE_ENABLED</key>
-  <false/>
-  <key>IS_GCM_ENABLED</key>
-  <false/>
-  <key>IS_SIGNIN_ENABLED</key>
-  <false/>
-  <key>GOOGLE_APP_ID</key>
-  <string>1:0:ios:0</string>
-</dict>
-</plist>
-EOF
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > ios/Runner/GoogleService-Info.plist
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> ios/Runner/GoogleService-Info.plist
+            echo '<plist version="1.0">' >> ios/Runner/GoogleService-Info.plist
+            echo '<dict>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>API_KEY</key><string>dummy</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>GCM_SENDER_ID</key><string>dummy</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>PLIST_VERSION</key><string>1</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>BUNDLE_ID</key><string>com.example.flutterQuizApp</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>PROJECT_ID</key><string>dummy</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>STORAGE_BUCKET</key><string>dummy</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>IS_ADS_ENABLED</key><false/>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>IS_ANALYTICS_ENABLED</key><false/>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>IS_APPINVITE_ENABLED</key><false/>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>IS_GCM_ENABLED</key><false/>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>IS_SIGNIN_ENABLED</key><false/>' >> ios/Runner/GoogleService-Info.plist
+            echo '  <key>GOOGLE_APP_ID</key><string>1:0:ios:0</string>' >> ios/Runner/GoogleService-Info.plist
+            echo '</dict>' >> ios/Runner/GoogleService-Info.plist
+            echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
       # 5. 執行編譯 iOS (增加詳細日誌以便除錯)
