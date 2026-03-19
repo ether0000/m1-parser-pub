@@ -29,11 +29,10 @@ jobs:
 
       # 3. 下載專案所需的套件
       - name: Install Dependencies
-        run: |
-          flutter pub get
-          flutter precache --ios
+        run: flutter pub get
 
       # 4. 關鍵步驟：確保 Firebase iOS 設定存在 (避免編譯失敗)
+      # 雖然 tokyo-trip-jkc8 沒寫，但 m1.png 專案之前報過缺少 plist
       - name: Setup Mock Firebase Config
         run: |
           mkdir -p ios/Runner
@@ -59,10 +58,12 @@ jobs:
             echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
-      # 5. 執行編譯 iOS (移除 redundant clean, 確保 config 存續)
+      # 5. 執行編譯 iOS (比照 tokyo-trip-jkc8 的成功指令)
       - name: Build iOS (No Codesign)
         run: |
-          flutter build ios --release --no-codesign -v
+          flutter clean
+          flutter pub get
+          flutter build ios --release --no-codesign
 
       # 6. 將編譯出的 Runner.app 打包成 .ipa 檔案
       - name: Create IPA payload
