@@ -1,0 +1,315 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
+import '../models/exam_question.dart';
+import '../services/firestore_service.dart';
+
+class ManageQuestionsScreen extends StatefulWidget {
+  const ManageQuestionsScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ManageQuestionsScreen> createState() => _ManageQuestionsScreenState();
+}
+
+class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
+  List<ExamQuestion> _allQuestions = [];
+  List<ExamQuestion> _filteredQuestions = [];
+  bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+  final Set<String> _expandedYears = {};
+
+  Map<String, List<ExamQuestion>> get _groupedQuestions {
+    Map<String, List<ExamQuestion>> groups = {};
+    for (var q in _filteredQuestions) {
+      if (!groups.containsKey(q.year)) {
+        groups[q.year] = [];
+      }
+      groups[q.year]!.add(q);
+    }
+    // Sort years descending
+    var sortedKeys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
+    return {for (var k in sortedKeys) k: groups[k]!};
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuestions();
+  }
+
+  Future<void> _loadQuestions() async {
+    final service = Provider.of<FirestoreService>(context, listen: false);
+    // For management, we might want to fetch all or use pagination. 
+    // Starting with a stream-based or simple get for now if count isn't too huge.
+    // If it's huge, we'd use getQuestionsPaginated.
+    service.getQuestionsStream().first.then((questions) {
+      if (mounted) {
+        setState(() {
+          _allQuestions = questions;
+          _filteredQuestions = questions;
+          _isLoading = false;
+        });
+      }
+    });
+  }
+
+  void _filterQuestions(String query) {
+    setState(() {
+      _filteredQuestions = _allQuestions
+          .where((q) =>
+              q.content.toLowerCase().contains(query.toLowerCase()) ||
+              q.year.contains(query) ||
+              q.subject.toLowerCase().contains(query.toLowerCase()))
+          .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF2F2F7),
+      appBar: CupertinoNavigationBar(
+        middle: const Text('管理題庫'),
+        previousPageTitle: '設定',
+        trailing: _isLoading ? const CupertinoActivityIndicator() : Text('${_filteredQuestions.length} 題'),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: CupertinoSearchTextField(
+              controller: _searchController,
+              placeholder: '搜尋題目內容、年份或科目...',
+              onChanged: _filterQuestions,
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CupertinoActivityIndicator())
+                : _buildGroupedList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupedList() {
+    final grouped = _groupedQuestions;
+    if (grouped.isEmpty) {
+      return const Center(child: Text('查無題目', style: TextStyle(color: Color(0xFF8E8E93))));
+    }
+
+    return ListView.builder(
+      itemCount: grouped.length,
+      itemBuilder: (context, index) {
+        String year = grouped.keys.elementAt(index);
+        List<ExamQuestion> questions = grouped[year]!;
+        bool isExpanded = _expandedYears.contains(year);
+
+        return Column(
+          children: [
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedYears.remove(year);
+                  } else {
+                    _expandedYears.add(year);
+                  }
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: const Color(0xFFE5E5EA),
+                child: Row(
+                  children: [
+                    Icon(
+                      isExpanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_right,
+                      size: 16,
+                      color: const Color(0xFF8E8E93),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$year 年',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${questions.length} 題',
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (isExpanded)
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: questions.length,
+                itemBuilder: (context, qIndex) {
+                  return _buildQuestionTile(questions[qIndex]);
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildQuestionTile(ExamQuestion q) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => _editQuestion(q),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(q.year, style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
+                  const SizedBox(width: 8),
+                  Text(q.subject, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF007AFF))),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                q.content,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, color: Colors.black),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '答案: ${q.correctAnswers.map((idx) => q.options[idx]).join(' / ')}',
+                style: const TextStyle(fontSize: 13, color: CupertinoColors.systemGreen),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _editQuestion(ExamQuestion q) {
+    final contentController = TextEditingController(text: q.content);
+    final List<TextEditingController> optionControllers = 
+        q.options.map((opt) => TextEditingController(text: opt)).toList();
+    final List<int> selectedAnswers = List<int>.from(q.correctAnswers);
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.9,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              CupertinoNavigationBar(
+                middle: const Text('修改題目'),
+                leading: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  child: const Text('取消'),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                trailing: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  child: const Text('儲存'),
+                  onPressed: () async {
+                    final updatedQ = ExamQuestion(
+                      id: q.id,
+                      year: q.year,
+                      subject: q.subject,
+                      content: contentController.text,
+                      options: optionControllers.map((c) => c.text).toList(),
+                      correctAnswers: selectedAnswers,
+                      userNote: q.userNote,
+                      errorCount: q.errorCount,
+                      correctCount: q.correctCount,
+                      attemptCount: q.attemptCount,
+                      lastAttemptDate: q.lastAttemptDate,
+                      isMastered: q.isMastered,
+                      isFavorite: q.isFavorite,
+                      categoryIds: q.categoryIds,
+                    );
+                    
+                    final service = Provider.of<FirestoreService>(context, listen: false);
+                    await service.updateQuestion(updatedQ);
+                    
+                    setState(() {
+                      int idx = _allQuestions.indexWhere((element) => element.id == q.id);
+                      if (idx != -1) _allQuestions[idx] = updatedQ;
+                      _filterQuestions(_searchController.text);
+                    });
+                    
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    const Text('題幹內文', style: TextStyle(fontSize: 13, color: Color(0xFF8E8E93))),
+                    const SizedBox(height: 8),
+                    CupertinoTextField(
+                      controller: contentController,
+                      maxLines: 5,
+                      padding: const EdgeInsets.all(12),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('選項 (點擊圓圈設定正確正確答案)', style: TextStyle(fontSize: 13, color: Color(0xFF8E8E93))),
+                    const SizedBox(height: 8),
+                    ...List.generate(optionControllers.length, (index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            CupertinoButton(
+                              padding: EdgeInsets.zero,
+                              onPressed: () => setModalState(() {
+                                if (selectedAnswers.contains(index)) {
+                                  if (selectedAnswers.length > 1) {
+                                    selectedAnswers.remove(index);
+                                  }
+                                } else {
+                                  selectedAnswers.add(index);
+                                }
+                              }),
+                              child: Icon(
+                                selectedAnswers.contains(index)
+                                    ? CupertinoIcons.checkmark_circle_fill 
+                                    : CupertinoIcons.circle,
+                                color: selectedAnswers.contains(index) ? const Color(0xFF34C759) : const Color(0xFFC7C7CC),
+                              ),
+                            ),
+                            Expanded(
+                              child: CupertinoTextField(
+                                controller: optionControllers[index],
+                                padding: const EdgeInsets.all(10),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
