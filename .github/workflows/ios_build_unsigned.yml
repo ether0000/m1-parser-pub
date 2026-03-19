@@ -11,7 +11,6 @@ env:
 
 jobs:
   build_ios:
-
     name: Build iOS App
     # 指定使用最新版的 macOS 虛擬機來執行
     runs-on: macos-latest 
@@ -34,15 +33,53 @@ jobs:
           flutter pub get
           flutter precache --ios
 
-      # 4. 關鍵步驟：先清除快取，再編譯 iOS
+      # 4. 關鍵步驟：確保 Firebase iOS 設定存在 (避免編譯失敗)
+      - name: Setup Mock Firebase Config
+        run: |
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "Creating dummy GoogleService-Info.plist to satisfy build"
+            cat <<EOF > ios/Runner/GoogleService-Info.plist
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>API_KEY</key>
+              <string>dummy</string>
+              <key>GCM_SENDER_ID</key>
+              <string>dummy</string>
+              <key>PLIST_VERSION</key>
+              <string>1</string>
+              <key>BUNDLE_ID</key>
+              <string>com.example.flutterQuizApp</string>
+              <key>PROJECT_ID</key>
+              <string>dummy</string>
+              <key>STORAGE_BUCKET</key>
+              <string>dummy</string>
+              <key>IS_ADS_ENABLED</key>
+              <false/>
+              <key>IS_ANALYTICS_ENABLED</key>
+              <false/>
+              <key>IS_APPINVITE_ENABLED</key>
+              <false/>
+              <key>IS_GCM_ENABLED</key>
+              <false/>
+              <key>IS_SIGNIN_ENABLED</key>
+              <false/>
+              <key>GOOGLE_APP_ID</key>
+              <string>1:0:ios:0</string>
+            </dict>
+            </plist>
+            EOF
+          fi
 
+      # 5. 執行編譯 iOS (增加詳細日誌以便除錯)
       - name: Build iOS (No Codesign)
         run: |
           flutter clean
           flutter pub get
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign -v
 
-      # 5. 將編譯出的 Runner.app 打包成 .ipa 檔案
+      # 6. 將編譯出的 Runner.app 打包成 .ipa 檔案
       - name: Create IPA payload
         run: |
           mkdir Payload
@@ -51,7 +88,7 @@ jobs:
           # 壓縮成 zip 並更改副檔名為 .ipa
           zip -r app.ipa Payload
 
-      # 6. 將打包好的 .ipa 檔案上傳為「產物 (Artifact)」，供我們下載
+      # 7. 將打包好的 .ipa 檔案上傳為「產物 (Artifact)」，供我們下載
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
