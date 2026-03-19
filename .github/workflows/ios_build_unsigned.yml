@@ -6,8 +6,12 @@ on:
     branches:
       - main         # 請確認你的預設分支是 main 還是 master
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build_ios:
+
     name: Build iOS App
     # 指定使用最新版的 macOS 虛擬機來執行
     runs-on: macos-latest 
@@ -26,9 +30,12 @@ jobs:
 
       # 3. 下載專案所需的套件
       - name: Install Dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter precache --ios
 
       # 4. 關鍵步驟：先清除快取，再編譯 iOS
+
       - name: Build iOS (No Codesign)
         run: |
           flutter clean
