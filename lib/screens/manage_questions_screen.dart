@@ -42,15 +42,15 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
     // For management, we might want to fetch all or use pagination. 
     // Starting with a stream-based or simple get for now if count isn't too huge.
     // If it's huge, we'd use getQuestionsPaginated.
-    service.getQuestionsStream().first.then((questions) {
-      if (mounted) {
-        setState(() {
-          _allQuestions = questions;
-          _filteredQuestions = questions;
-          _isLoading = false;
-        });
-      }
-    });
+    final questions = await service.getAllQuestionsCached();
+    if (mounted) {
+      setState(() {
+        _allQuestions = questions;
+        _filteredQuestions = questions;
+        _isLoading = false;
+      });
+    }
+
   }
 
   void _filterQuestions(String query) {
@@ -132,6 +132,20 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
                     Text(
                       '$year 年',
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                    ),
+                    const SizedBox(width: 8),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 0,
+                      child: const Icon(CupertinoIcons.pencil_circle, size: 20, color: Color(0xFF007AFF)),
+                      onPressed: () => _showUpdateYearDialog(year),
+                    ),
+                    const SizedBox(width: 8),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 0,
+                      child: const Icon(CupertinoIcons.trash_circle, size: 20, color: Color(0xFFFF3B30)),
+                      onPressed: () => _confirmDeleteByYear(year),
                     ),
                     const Spacer(),
                     Text(
@@ -309,6 +323,126 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmDeleteByYear(String year) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text('確認刪除 $year 年題庫？'),
+        content: const Text('此操作將刪除該年份所有題目，且無法復原。'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('確認刪除'),
+            onPressed: () async {
+              Navigator.pop(context);
+              _showLoading('正在刪除 $year 年題目...');
+              try {
+                final service = Provider.of<FirestoreService>(context, listen: false);
+                await service.deleteQuestionsByYear(year);
+                await _loadQuestions();
+                if (mounted) Navigator.pop(context); // Close loading
+              } catch (e) {
+                if (mounted) {
+                  Navigator.pop(context);
+                  _showAlert('錯誤', '刪除失敗: $e');
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpdateYearDialog(String oldYear) {
+    final controller = TextEditingController(text: oldYear);
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text('修改 $oldYear 年份'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: controller,
+            placeholder: '輸入新年份',
+            keyboardType: TextInputType.number,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          CupertinoDialogAction(
+            child: const Text('確認修改'),
+            onPressed: () async {
+              final newYear = controller.text.trim();
+              if (newYear.isEmpty || newYear == oldYear) {
+                Navigator.pop(context);
+                return;
+              }
+              Navigator.pop(context);
+              _showLoading('正在批次更新年份...');
+              try {
+                final service = Provider.of<FirestoreService>(context, listen: false);
+                await service.updateQuestionsYear(oldYear, newYear);
+
+
+                await _loadQuestions();
+                if (mounted) Navigator.pop(context);
+              } catch (e) {
+                if (mounted) {
+                  Navigator.pop(context);
+                  _showAlert('錯誤', '更新失敗: $e');
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLoading(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => WillPopScope(
+        onWillPop: () async => false,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CupertinoActivityIndicator(radius: 15),
+              const SizedBox(height: 16),
+              Text(message, style: const TextStyle(color: Colors.white, fontSize: 16)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAlert(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (c) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('確定'),
+            onPressed: () => Navigator.pop(c),
+          ),
+        ],
       ),
     );
   }

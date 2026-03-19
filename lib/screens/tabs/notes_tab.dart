@@ -196,6 +196,13 @@ class _NotesTabState extends State<NotesTab> {
                     isExpanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
                     color: CupertinoColors.systemGrey,
                   ),
+                  const SizedBox(width: 8),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 0,
+                    child: const Icon(CupertinoIcons.trash, color: Color(0xFFFF3B30), size: 18),
+                    onPressed: () => _confirmDeleteSession(session.sessionId),
+                  ),
                 ],
               ),
             ),
@@ -412,7 +419,6 @@ class _NotesTabState extends State<NotesTab> {
                           await service.updateQuestionNote(q.id, noteController.text);
                           
                           // Save tags
-                          // We need a way to update tags in FirestoreService
                           await service.updateQuestionTags(q.id, tempTags);
 
                           setState(() {
@@ -435,28 +441,61 @@ class _NotesTabState extends State<NotesTab> {
     );
   }
 
+  void _confirmDeleteSession(String sessionId) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('確認刪除測驗紀錄？'),
+        content: const Text('此操作將永久刪除此筆測驗紀錄，無法復原。'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('確認刪除'),
+            onPressed: () async {
+              Navigator.pop(context);
+              final service = Provider.of<FirestoreService>(context, listen: false);
+              await service.deleteQuizSession(sessionId);
+              _loadData();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTagGrid(List<String> sourceTags, List<String> selectedTags, Function setSheetState, {bool isCustom = false}) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: sourceTags.map((tag) {
         final isSelected = selectedTags.contains(tag);
-        return FilterChip(
-          label: Text(tag, style: TextStyle(color: isSelected ? Colors.white : (isCustom ? Colors.blueGrey : Colors.black87), fontSize: 12)),
-          selected: isSelected,
-          onSelected: (selected) {
+        return GestureDetector(
+          onLongPress: () {
             setSheetState(() {
-              if (selected) {
-                if (!selectedTags.contains(tag)) selectedTags.add(tag);
-              } else {
-                selectedTags.remove(tag);
-              }
+              selectedTags.remove(tag);
             });
           },
-          selectedColor: isCustom ? Colors.blueGrey : const Color(0xFF007AFF),
-          backgroundColor: isCustom ? Colors.grey.withOpacity(0.1) : Colors.white,
-          checkmarkColor: Colors.white,
-          shape: isCustom ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.withOpacity(0.2))) : null,
+          child: FilterChip(
+            label: Text(tag, style: TextStyle(color: isSelected ? Colors.white : (isCustom ? Colors.blueGrey : Colors.black87), fontSize: 12)),
+            selected: isSelected,
+            onSelected: (selected) {
+              setSheetState(() {
+                if (selected) {
+                  if (!selectedTags.contains(tag)) selectedTags.add(tag);
+                } else {
+                  selectedTags.remove(tag);
+                }
+              });
+            },
+            selectedColor: isCustom ? Colors.blueGrey : const Color(0xFF007AFF),
+            backgroundColor: isCustom ? Colors.grey.withOpacity(0.1) : Colors.white,
+            checkmarkColor: Colors.white,
+            shape: isCustom ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: Colors.grey.withOpacity(0.2))) : null,
+          ),
         );
       }).toList(),
     );

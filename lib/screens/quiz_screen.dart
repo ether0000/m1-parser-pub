@@ -23,6 +23,8 @@ class _QuizScreenState extends State<QuizScreen> {
   bool _hasAnsweredCurrent = false;
   int? _selectedOption;
   bool _isFinished = false;
+  final Set<String> _modifiedQuestionIds = {};
+
 
   void _submitAnswer(int index) async {
     setState(() {
@@ -47,11 +49,9 @@ class _QuizScreenState extends State<QuizScreen> {
         _wrongQuestions.add(q);
       }
     }
-
-    // Save update to firestore immediately
-    final firestoreService = Provider.of<FirestoreService>(context, listen: false);
-    await firestoreService.updateQuestion(q);
+    _modifiedQuestionIds.add(q.id);
   }
+
 
   void _nextQuestion() {
     if (_currentIndex < widget.questions.length - 1) {
@@ -77,21 +77,27 @@ class _QuizScreenState extends State<QuizScreen> {
       userAnswers: _userAnswers,
     );
 
-    await firestoreService.saveQuizSession(session);
+    // Filter questions that were actually modified
+    final updatedQuestions = widget.questions
+        .where((q) => _modifiedQuestionIds.contains(q.id))
+        .toList();
+
+    await firestoreService.saveQuizResult(session, updatedQuestions);
 
     setState(() {
       _isFinished = true;
     });
   }
 
-  void _toggleFavorite() async {
+
+  void _toggleFavorite() {
     ExamQuestion q = widget.questions[_currentIndex];
     setState(() {
       q.isFavorite = !q.isFavorite;
+      _modifiedQuestionIds.add(q.id);
     });
-    final firestoreService = Provider.of<FirestoreService>(context, listen: false);
-    await firestoreService.updateQuestion(q);
   }
+
 
   @override
   Widget build(BuildContext context) {

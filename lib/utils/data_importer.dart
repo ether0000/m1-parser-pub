@@ -4,7 +4,8 @@ import '../models/exam_question.dart';
 import '../services/firestore_service.dart';
 
 class DataImporter {
-  static Future<void> importLocalJson(FirestoreService firestoreService, List<String> existingIds) async {
+  static Future<void> importLocalJson(FirestoreService firestoreService, Set<String> existingIds) async {
+
     try {
       // Assuming you will place JSON files in assets/json/
       // Need to read the manifest or hardcode paths. For now, hardcoding an example.
@@ -26,7 +27,8 @@ class DataImporter {
     }
   }
 
-  static Future<void> importJsonContent(String jsonContent, FirestoreService firestoreService, List<String> existingIds) async {
+  static Future<void> importJsonContent(String jsonContent, FirestoreService firestoreService, Set<String> existingIds) async {
+
     try {
       final List<dynamic> data = json.decode(jsonContent);
       List<ExamQuestion> newQuestions = [];

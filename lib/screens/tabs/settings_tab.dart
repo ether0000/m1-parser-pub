@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
@@ -190,11 +192,12 @@ class _SettingsTabState extends State<SettingsTab> {
       if (result != null) {
         String content;
         if (kIsWeb) {
-          content = String.fromCharCodes(result.files.first.bytes!);
+          content = utf8.decode(result.files.first.bytes!);
         } else {
           final file = File(result.files.single.path!);
-          content = await file.readAsString();
+          content = await file.readAsString(encoding: utf8);
         }
+
 
         if (context.mounted) {
           showDialog(
@@ -204,8 +207,9 @@ class _SettingsTabState extends State<SettingsTab> {
           );
         }
 
-        List<String> existingIds = widget.questions.map((q) => q.id).toList();
+        Set<String> existingIds = widget.questions.map((q) => q.id).toSet();
         await DataImporter.importJsonContent(content, firestoreService, existingIds);
+
 
         if (context.mounted) {
           Navigator.pop(context); // hide indicator
@@ -227,8 +231,9 @@ class _SettingsTabState extends State<SettingsTab> {
       builder: (c) => const Center(child: CupertinoActivityIndicator()),
     );
     try {
-      List<String> existingIds = widget.questions.map((q) => q.id).toList();
+      Set<String> existingIds = widget.questions.map((q) => q.id).toSet();
       await DataImporter.importLocalJson(firestoreService, existingIds);
+
       if (context.mounted) {
         Navigator.pop(context);
         _showCupertinoAlert(context, '成功', '題庫更新成功！');
@@ -257,10 +262,23 @@ class _SettingsTabState extends State<SettingsTab> {
             child: const Text('確認清空'),
             onPressed: () async {
               Navigator.pop(c);
+              // Show a more persistent loading indicator
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (c) => const Center(child: CupertinoActivityIndicator()),
+                builder: (c) => WillPopScope(
+                  onWillPop: () async => false, // Prevent back button
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CupertinoActivityIndicator(radius: 15),
+                        SizedBox(height: 16),
+                        Text('正在刪除題庫，請稍候...', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                ),
               );
               try {
                 await firestoreService.deleteAllQuestions();
