@@ -59,11 +59,9 @@ jobs:
             echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
-      # 5. 執行編譯 iOS (增加詳細日誌以便除錯)
+      # 5. 執行編譯 iOS (移除 redundant clean, 確保 config 存續)
       - name: Build iOS (No Codesign)
         run: |
-          flutter clean
-          flutter pub get
           flutter build ios --release --no-codesign -v
 
       # 6. 將編譯出的 Runner.app 打包成 .ipa 檔案

@@ -10,7 +10,7 @@ project 'Runner', {
   'Profile' => :profile,
 }
 
-def flutter_root
+def flutter_install_ios_engine
   generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
   unless File.exist?(generated_xcode_build_settings_path)
     raise "Generated.xcconfig must exist. If you're running pod install manually, make sure flutter pub get is executed first."
@@ -18,22 +18,22 @@ def flutter_root
 
   File.foreach(generated_xcode_build_settings_path) do |line|
     matches = line.match(/\AFLUTTER_ROOT=(.*)\z/)
-    return matches[1] if matches
+    if matches
+      flutter_root = matches[1]
+      require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'xcode_backend.rb'), flutter_root)
+      return
+    end
   end
   raise "FLUTTER_ROOT not found in Generated.xcconfig. Try deleting Generated.xcconfig and regenerate it by running flutter pub get."
 end
 
-require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'xcode_backend.rb'), flutter_root)
+flutter_install_ios_engine
 
 target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
   flutter_install_all_ios_pods File.expand_path(File.join('..', '..'), __FILE__)
-
-  target 'RunnerTests' do
-    inherit! :search_paths
-  end
 end
 
 post_install do |installer|
