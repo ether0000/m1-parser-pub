@@ -14,10 +14,10 @@ import '../../services/firestore_service.dart';
 import '../../utils/data_importer.dart';
 import '../manage_questions_screen.dart';
 
+import '../../providers/app_provider.dart';
+
 class SettingsTab extends StatefulWidget {
-  final List<ExamQuestion> questions;
-  
-  const SettingsTab({Key? key, required this.questions}) : super(key: key);
+  const SettingsTab({Key? key}) : super(key: key);
 
   @override
   State<SettingsTab> createState() => _SettingsTabState();
@@ -207,7 +207,8 @@ class _SettingsTabState extends State<SettingsTab> {
           );
         }
 
-        Set<String> existingIds = widget.questions.map((q) => q.id).toSet();
+        final appProvider = Provider.of<AppProvider>(context, listen: false);
+        Set<String> existingIds = appProvider.questions.map((q) => q.id).toSet();
         await DataImporter.importJsonContent(content, firestoreService, existingIds);
 
 
@@ -231,7 +232,8 @@ class _SettingsTabState extends State<SettingsTab> {
       builder: (c) => const Center(child: CupertinoActivityIndicator()),
     );
     try {
-      Set<String> existingIds = widget.questions.map((q) => q.id).toSet();
+      final appProvider = Provider.of<AppProvider>(context, listen: false);
+      Set<String> existingIds = appProvider.questions.map((q) => q.id).toSet();
       await DataImporter.importLocalJson(firestoreService, existingIds);
 
       if (context.mounted) {
@@ -315,7 +317,8 @@ class _SettingsTabState extends State<SettingsTab> {
             child: const Text('確認重置'),
             onPressed: () async {
               Navigator.pop(c);
-              await firestoreService.resetAllProgress(widget.questions);
+              final appProvider = Provider.of<AppProvider>(context, listen: false);
+              await firestoreService.resetAllProgress(appProvider.questions);
               if (context.mounted) {
                 _showCupertinoAlert(context, '已重置', '所有學習進度已歸零。');
               }

@@ -19,6 +19,7 @@ class ExamQuestion {
   bool isFavorite;
   List<String> categoryIds;
   List<String> tags;
+  DateTime? nextReviewDate;
 
   ExamQuestion({
     required this.id,
@@ -36,6 +37,7 @@ class ExamQuestion {
     this.isFavorite = false,
     this.categoryIds = const [],
     this.tags = const [],
+    this.nextReviewDate,
   });
 
   factory ExamQuestion.fromFirestore(DocumentSnapshot doc) {
@@ -56,6 +58,7 @@ class ExamQuestion {
       isFavorite: data['isFavorite'] ?? false,
       categoryIds: List<String>.from(data['categoryIds'] ?? []),
       tags: List<String>.from(data['tags'] ?? []),
+      nextReviewDate: (data['nextReviewDate'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -75,6 +78,7 @@ class ExamQuestion {
       'isFavorite': isFavorite,
       'categoryIds': categoryIds,
       'tags': tags,
+      'nextReviewDate': nextReviewDate != null ? Timestamp.fromDate(nextReviewDate!) : null,
     };
   }
 

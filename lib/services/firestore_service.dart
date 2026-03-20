@@ -1,15 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/exam_question.dart';
 import '../models/quiz_session.dart';
-import '../models/question_category.dart';
+import '../models/user_stats.dart';
 
 class FirestoreService {
   final CollectionReference _questionsCollection =
       FirebaseFirestore.instance.collection('ExamQuestions');
   final CollectionReference _sessionsCollection =
       FirebaseFirestore.instance.collection('QuizSessions');
-  final CollectionReference _categoriesCollection =
-      FirebaseFirestore.instance.collection('QuestionCategories');
   final CollectionReference _settingsCollection =
       FirebaseFirestore.instance.collection('UserSettings');
 
@@ -70,35 +68,17 @@ class FirestoreService {
     return snapshot.docs.map((doc) => QuizSession.fromFirestore(doc)).toList();
   }
 
-  // Question Category CRUD
-  Future<void> saveCategory(QuestionCategory category) async {
-    await _categoriesCollection.doc(category.categoryId).set(category.toFirestore());
+  Stream<List<QuizSession>> getQuizSessionsStream() {
+    return _sessionsCollection
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) => QuizSession.fromFirestore(doc)).toList();
+    });
   }
 
-  Future<List<QuestionCategory>> getCategories() async {
-    final snapshot = await _categoriesCollection.get();
-    return snapshot.docs.map((doc) => QuestionCategory.fromFirestore(doc)).toList();
-  }
-
-  // Notes and Categories updates
   Future<void> updateQuestionNote(String questionId, String newNote) async {
     await _questionsCollection.doc(questionId).update({'userNote': newNote});
-  }
-
-  Future<void> updateQuestionTags(String questionId, List<String> tags) async {
-    await _questionsCollection.doc(questionId).update({'tags': tags});
-  }
-
-  Future<void> addQuestionToCategory(String questionId, String categoryId) async {
-    await _questionsCollection.doc(questionId).update({
-      'categoryIds': FieldValue.arrayUnion([categoryId])
-    });
-  }
-
-  Future<void> removeQuestionFromCategory(String questionId, String categoryId) async {
-    await _questionsCollection.doc(questionId).update({
-      'categoryIds': FieldValue.arrayRemove([categoryId])
-    });
   }
 
   // Batch insert/update questions (used for initialization)
@@ -143,6 +123,8 @@ class FirestoreService {
   // Reset all questions progress
   Future<void> resetAllProgress(List<ExamQuestion> allQuestions) async {
     final int chunkSize = 450;
+    
+    // 1. Reset question stats
     for (var i = 0; i < allQuestions.length; i += chunkSize) {
       final batch = FirebaseFirestore.instance.batch();
       final end = (i + chunkSize < allQuestions.length) ? i + chunkSize : allQuestions.length;
@@ -161,6 +143,32 @@ class FirestoreService {
       }
       await batch.commit().timeout(const Duration(seconds: 15));
     }
+
+    // 2. Delete all quiz sessions
+    bool hasMore = true;
+    while (hasMore) {
+      final snapshot = await _sessionsCollection.limit(chunkSize).get();
+      if (snapshot.docs.isEmpty) {
+        hasMore = false;
+        break;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit().timeout(const Duration(seconds: 15));
+      
+      if (snapshot.docs.length < chunkSize) {
+        hasMore = false;
+      } else {
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }
+
+    // 3. Reset User Stats
+    await updateUserStats(UserStats());
   }
 
   // Exam Date Management
@@ -179,6 +187,23 @@ class FirestoreService {
       return timestamp?.toDate();
     }
     return null;
+  }
+
+  // User Stats Methods
+  Future<UserStats> getUserStats() async {
+    final doc = await _settingsCollection.doc('stats').get();
+    return UserStats.fromFirestore(doc).resetDailyIfNeeded();
+  }
+
+  Stream<UserStats> getUserStatsStream() {
+    return _settingsCollection
+        .doc('stats')
+        .snapshots()
+        .map((doc) => UserStats.fromFirestore(doc).resetDailyIfNeeded());
+  }
+
+  Future<void> updateUserStats(UserStats stats) async {
+    await _settingsCollection.doc('stats').set(stats.toFirestore(), SetOptions(merge: true));
   }
 
   // Delete all questions in smaller chunks to avoid memory/timeout issues
@@ -318,18 +343,64 @@ class FirestoreService {
     DocumentReference sessionRef = _sessionsCollection.doc(session.sessionId);
     batch.set(sessionRef, session.toFirestore());
 
-    // 2. Save Updated Questions
+    // 2. Save Updated Questions (with Spaced Repetition logic)
+    int clearedErrors = 0;
     for (var q in updatedQuestions) {
+      // Logic for Spaced Repetition
+      final bool wasCorrect = !session.wrongQuestionIds.contains(q.id);
+      
+      if (wasCorrect) {
+        // Only count as "clearing an error" if it was a frequent error
+        if (q.errorCount >= 2) {
+          clearedErrors++;
+        }
+        
+        // Spaced Repetition interval increases
+        int days = (q.correctCount * 3).clamp(1, 30);
+        q.nextReviewDate = DateTime.now().add(Duration(days: days));
+      } else {
+        // Wrong: review tomorrow
+        q.nextReviewDate = DateTime.now().add(const Duration(days: 1));
+      }
+      
       DocumentReference qRef = _questionsCollection.doc(q.id);
       batch.update(qRef, q.toFirestore());
     }
 
+    // 3. Update User Stats for Daily Quests
+    final stats = await getUserStats();
+    final newStats = UserStats(
+      loginStreak: stats.loginStreak,
+      lastLoginDate: stats.lastLoginDate,
+      dailyQuestionsDone: stats.dailyQuestionsDone + session.totalQuestions,
+      dailyErrorsCleared: stats.dailyErrorsCleared + clearedErrors,
+      totalPoints: stats.totalPoints + (session.totalQuestions * 10) + (clearedErrors * 50),
+    ).resetDailyIfNeeded(); // Ensure it's the right day
+    
+    DocumentReference statsRef = _settingsCollection.doc('stats');
+    batch.set(statsRef, newStats.toFirestore(), SetOptions(merge: true));
+
     await batch.commit().timeout(const Duration(seconds: 15));
   }
 
-  // Delete a specific quiz session
-
   Future<void> deleteQuizSession(String sessionId) async {
-    await _sessionsCollection.doc(sessionId).delete();
+    final sessionDoc = await _sessionsCollection.doc(sessionId).get();
+    if (!sessionDoc.exists) return;
+    final session = QuizSession.fromFirestore(sessionDoc);
+    
+    // Decrease User Stats
+    final stats = await getUserStats();
+    final newStats = UserStats(
+      loginStreak: stats.loginStreak,
+      lastLoginDate: stats.lastLoginDate,
+      dailyQuestionsDone: (stats.dailyQuestionsDone - session.totalQuestions).clamp(0, 9999),
+      dailyErrorsCleared: (stats.dailyErrorsCleared - (session.totalQuestions - session.wrongCount)).clamp(0, 9999),
+      totalPoints: (stats.totalPoints - (session.totalQuestions * 10)).clamp(0, 999999),
+    );
+    
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+    batch.delete(_sessionsCollection.doc(sessionId));
+    batch.set(_settingsCollection.doc('stats'), newStats.toFirestore(), SetOptions(merge: true));
+    await batch.commit();
   }
 }

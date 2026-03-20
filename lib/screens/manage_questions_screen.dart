@@ -254,7 +254,6 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
                       lastAttemptDate: q.lastAttemptDate,
                       isMastered: q.isMastered,
                       isFavorite: q.isFavorite,
-                      categoryIds: q.categoryIds,
                     );
                     
                     final service = Provider.of<FirestoreService>(context, listen: false);

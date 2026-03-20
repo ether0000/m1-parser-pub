@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 
-import '../services/firestore_service.dart';
-import '../models/exam_question.dart';
+import '../providers/app_provider.dart';
 import '../utils/animated_background.dart';
 import '../utils/glassmorphism.dart';
 
@@ -22,44 +21,48 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
+  int _initialSubTabIndex = 0;
+
+  void _navigateToTab(int index, {int initialSubTabIndex = 0}) {
+    setState(() {
+      _currentIndex = index;
+      _initialSubTabIndex = initialSubTabIndex;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final firestoreService = Provider.of<FirestoreService>(context, listen: false);
+    final appProvider = context.watch<AppProvider>();
+    
+    if (appProvider.isLoading) {
+      return const Scaffold(
+        body: Center(child: CupertinoActivityIndicator()),
+      );
+    }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
-      body: StreamBuilder<List<ExamQuestion>>(
-        stream: firestoreService.getQuestionsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CupertinoActivityIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)));
-          }
-
-          final questions = snapshot.data ?? [];
-
-          // Normal Tab View (Welcome Screen removed as per Task 6)
-          Widget currentTab;
-          switch (_currentIndex) {
-            case 0:
-              currentTab = DashboardTab(questions: questions);
-              break;
-            case 1:
-              currentTab = PracticeTab(questions: questions);
-              break;
-            case 2:
-              currentTab = NotesTab(questions: questions);
-              break;
-            case 3:
-            default:
-              currentTab = SettingsTab(questions: questions);
-              break;
-          }
-
-          return Scaffold(
+    Widget currentTab;
+    switch (_currentIndex) {
+      case 0:
+        currentTab = DashboardTab(
+          onNavigate: _navigateToTab,
+        );
+        break;
+      case 1:
+        currentTab = const PracticeTab();
+        break;
+      case 2:
+        currentTab = NotesTab(
+          initialSubTabIndex: _initialSubTabIndex,
+        );
+        // Reset the initial sub tab index after it's been used
+        _initialSubTabIndex = 0;
+        break;
+      case 3:
+      default:
+        currentTab = const SettingsTab();
+        break;
+    }
+  return Scaffold(
             backgroundColor: const Color(0xFFF2F2F7),
             body: currentTab,
             bottomNavigationBar: CupertinoTabBar(
@@ -74,8 +77,5 @@ class _MainLayoutState extends State<MainLayout> {
               ],
             ),
           );
-        },
-      ),
-    );
   }
 }

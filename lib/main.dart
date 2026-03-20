@@ -4,13 +4,20 @@ import 'firebase_options.dart';
 import 'package:provider/provider.dart';
 
 import 'services/firestore_service.dart';
+import 'providers/app_provider.dart';
 import 'screens/main_layout.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
  await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
   
   runApp(const QuizApp());
@@ -24,6 +31,11 @@ class QuizApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<FirestoreService>(create: (_) => FirestoreService()),
+        ChangeNotifierProvider<AppProvider>(
+          create: (context) => AppProvider(
+            Provider.of<FirestoreService>(context, listen: false),
+          ),
+        ),
       ],
       child: MaterialApp(
         title: 'Quiz App',

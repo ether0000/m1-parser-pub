@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../models/exam_question.dart';
 import '../models/quiz_session.dart';
@@ -10,7 +11,8 @@ import 'package:uuid/uuid.dart';
 
 class QuizScreen extends StatefulWidget {
   final List<ExamQuestion> questions;
-  const QuizScreen({Key? key, required this.questions}) : super(key: key);
+  final bool isSpecialTraining;
+  const QuizScreen({Key? key, required this.questions, this.isSpecialTraining = false}) : super(key: key);
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
@@ -84,9 +86,42 @@ class _QuizScreenState extends State<QuizScreen> {
 
     await firestoreService.saveQuizResult(session, updatedQuestions);
 
-    setState(() {
-      _isFinished = true;
+    if (widget.isSpecialTraining) {
+      _showSummaryDialog();
+    } else {
+      setState(() {
+        _isFinished = true;
+      });
+    }
+  }
+
+  void _showSummaryDialog() {
+    int answeredCount = _userAnswers.length;
+    int correctCount = 0;
+    _userAnswers.forEach((qId, ansIdx) {
+      final q = widget.questions.firstWhere((element) => element.id == qId);
+      if (q.correctAnswers.contains(ansIdx)) {
+        correctCount++;
+      }
     });
+    double accuracy = answeredCount > 0 ? (correctCount / answeredCount) * 100 : 0;
+
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('特訓結束'),
+        content: Text('本次特訓共複習了 $answeredCount 題\n正確率：${accuracy.toStringAsFixed(1)}%'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('確定'),
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Exit QuizScreen
+            },
+          )
+        ],
+      ),
+    );
   }
 
 
@@ -114,6 +149,11 @@ class _QuizScreenState extends State<QuizScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          if (widget.isSpecialTraining)
+            TextButton(
+              onPressed: _finishQuiz,
+              child: const Text('結束特訓', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            ),
           IconButton(
             icon: Icon(currentQ.isFavorite ? Icons.star_rounded : Icons.star_border_rounded, color: Colors.amber),
             onPressed: _toggleFavorite,

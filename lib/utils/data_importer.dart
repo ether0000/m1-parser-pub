@@ -53,8 +53,6 @@ class DataImporter {
             options: List<String>.from(item['options'] ?? []),
             correctAnswers: correctIndices,
             userNote: item['userNote']?.toString() ?? '',
-            categoryIds: List<String>.from(item['categoryIds'] ?? []),
-            tags: List<String>.from(item['tags'] ?? []),
           );
           newQuestions.add(q);
         }
