@@ -85,6 +85,24 @@ class ReviewScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Row(
+                              children: [
+                                if (_getQuestionNumber(q.id) > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                                    child: Text('第 ${_getQuestionNumber(q.id)} 題', style: const TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    'ID: ${q.id}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.black38),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
                             Text(
                               q.content,
                               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
@@ -171,6 +189,18 @@ class ReviewScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  int _getQuestionNumber(String id) {
+    try {
+      if (id.contains('-')) {
+        final part = id.split('-').last;
+        return int.parse(part);
+      }
+      return int.parse(id);
+    } catch (e) {
+      return 0;
+    }
   }
 }
 

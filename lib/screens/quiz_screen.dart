@@ -134,6 +134,18 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
 
+  int _getQuestionNumber(String id) {
+    try {
+      if (id.contains('-')) {
+        final part = id.split('-').last;
+        return int.parse(part);
+      }
+      return int.parse(id);
+    } catch (e) {
+      return 0;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isFinished) {
@@ -141,13 +153,23 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     ExamQuestion currentQ = widget.questions[_currentIndex];
+    int qNum = _getQuestionNumber(currentQ.id);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('第 ${_currentIndex + 1} 題 / 共 ${widget.questions.length} 題', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+        title: Column(
+          children: [
+            Text('第 ${_currentIndex + 1} 題 / 共 ${widget.questions.length} 題', 
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+            if (qNum > 0)
+              Text('提號: $qNum', 
+                style: const TextStyle(fontSize: 10, color: Colors.black54)),
+          ],
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        centerTitle: true,
         actions: [
           if (widget.isSpecialTraining)
             TextButton(

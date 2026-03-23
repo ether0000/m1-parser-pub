@@ -178,6 +178,9 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
         final year = sortedYears[index];
         final yearQuestions = groupedByYear[year]!;
         
+        // Sort questions by the number after the hyphen in their ID
+        yearQuestions.sort((a, b) => _getQuestionNumber(a.id).compareTo(_getQuestionNumber(b.id)));
+        
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -198,6 +201,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
                   itemCount: yearQuestions.length,
                   itemBuilder: (context, qIndex) {
                     final q = yearQuestions[qIndex];
+                    int qNum = _getQuestionNumber(q.id);
                     Color bgColor;
                     Color textColor = Colors.white;
 
@@ -221,7 +225,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '${qIndex + 1}',
+                          qNum > 0 ? '$qNum' : '${qIndex + 1}',
                           style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
                         ),
                       ),
@@ -323,7 +327,17 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
     
     return Consumer<AppProvider>(
       builder: (context, appProvider, child) {
-        final wrongQuestions = appProvider.questions.where((q) => wrongIds.contains(q.id)).toList();
+        // Map back from ID to Question, preserving sequence from wrongIds
+        final List<ExamQuestion> wrongQuestions = [];
+        for (final id in wrongIds) {
+          try {
+            final q = appProvider.questions.firstWhere((element) => element.id == id);
+            wrongQuestions.add(q);
+          } catch (e) {
+            // Question might have been deleted
+          }
+        }
+        
         return Container(
           decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF2F2F7)))),
           child: Column(
@@ -335,8 +349,14 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
   }
 
   Widget _buildSimpleQuestionTile(ExamQuestion q) {
+    int qNum = _getQuestionNumber(q.id);
     return ListTile(
       dense: true,
+      leading: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
+        child: Text(qNum > 0 ? '#$qNum' : '#--', style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+      ),
       title: Text(q.content, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
       trailing: const Icon(CupertinoIcons.chevron_right, size: 14),
       onTap: () => _showQuestionDetailSheet(q),
@@ -387,6 +407,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
 
   void _showQuestionDetailSheet(ExamQuestion q) {
     final noteController = TextEditingController(text: q.userNote);
+    int qNum = _getQuestionNumber(q.id);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -406,8 +427,16 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
                       const Icon(CupertinoIcons.doc_text, size: 18, color: Colors.blueAccent),
                       const SizedBox(width: 8),
                       Text(q.subject, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                      if (qNum > 0) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                          child: Text('第 $qNum 題', style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                       const Spacer(),
-                      Text(q.year, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text('ID: ${q.id}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -482,6 +511,18 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
         ),
       ),
     );
+  }
+
+  int _getQuestionNumber(String id) {
+    try {
+      if (id.contains('-')) {
+        final part = id.split('-').last;
+        return int.parse(part);
+      }
+      return int.parse(id);
+    } catch (e) {
+      return 0;
+    }
   }
 
   void _confirmDeleteSession(String sessionId) {
