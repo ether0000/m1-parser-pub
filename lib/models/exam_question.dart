@@ -21,6 +21,22 @@ class ExamQuestion {
   List<String> tags;
   DateTime? nextReviewDate;
 
+  /// 解析 ID 中的數字部分 (例如 "2020下-50" -> 50)
+  static int parseQuestionNumber(String id) {
+    try {
+      if (id.contains('-')) {
+        final part = id.split('-').last;
+        return int.parse(part);
+      }
+      return int.parse(id);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /// 方便排序使用的題號 getter
+  int get questionNumber => parseQuestionNumber(id);
+
   ExamQuestion({
     required this.id,
     required this.year,

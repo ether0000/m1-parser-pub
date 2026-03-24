@@ -87,12 +87,12 @@ class ReviewScreen extends StatelessWidget {
                           children: [
                             Row(
                               children: [
-                                if (_getQuestionNumber(q.id) > 0)
+                                if (q.questionNumber > 0)
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     margin: const EdgeInsets.only(right: 8),
                                     decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-                                    child: Text('第 ${_getQuestionNumber(q.id)} 題', style: const TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    child: Text('${q.year} 年 第 ${q.questionNumber} 題', style: const TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                                   ),
                                 Expanded(
                                   child: Text(
@@ -191,16 +191,5 @@ class ReviewScreen extends StatelessWidget {
     );
   }
 
-  int _getQuestionNumber(String id) {
-    try {
-      if (id.contains('-')) {
-        final part = id.split('-').last;
-        return int.parse(part);
-      }
-      return int.parse(id);
-    } catch (e) {
-      return 0;
-    }
-  }
 }
 

@@ -179,7 +179,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
         final yearQuestions = groupedByYear[year]!;
         
         // Sort questions by the number after the hyphen in their ID
-        yearQuestions.sort((a, b) => _getQuestionNumber(a.id).compareTo(_getQuestionNumber(b.id)));
+        yearQuestions.sort((a, b) => a.questionNumber.compareTo(b.questionNumber));
         
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -201,7 +201,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
                   itemCount: yearQuestions.length,
                   itemBuilder: (context, qIndex) {
                     final q = yearQuestions[qIndex];
-                    int qNum = _getQuestionNumber(q.id);
+                    int qNum = q.questionNumber;
                     Color bgColor;
                     Color textColor = Colors.white;
 
@@ -349,7 +349,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
   }
 
   Widget _buildSimpleQuestionTile(ExamQuestion q) {
-    int qNum = _getQuestionNumber(q.id);
+    int qNum = q.questionNumber;
     return ListTile(
       dense: true,
       leading: Container(
@@ -407,7 +407,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
 
   void _showQuestionDetailSheet(ExamQuestion q) {
     final noteController = TextEditingController(text: q.userNote);
-    int qNum = _getQuestionNumber(q.id);
+    int qNum = q.questionNumber;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -432,7 +432,7 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                          child: Text('第 $qNum 題', style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                          child: Text('${q.year} 年 第 $qNum 題', style: const TextStyle(fontSize: 11, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
                         ),
                       ],
                       const Spacer(),
@@ -511,18 +511,6 @@ class _NotesTabState extends State<NotesTab> with SingleTickerProviderStateMixin
         ),
       ),
     );
-  }
-
-  int _getQuestionNumber(String id) {
-    try {
-      if (id.contains('-')) {
-        final part = id.split('-').last;
-        return int.parse(part);
-      }
-      return int.parse(id);
-    } catch (e) {
-      return 0;
-    }
   }
 
   void _confirmDeleteSession(String sessionId) {

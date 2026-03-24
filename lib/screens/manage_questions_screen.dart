@@ -28,7 +28,16 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
     }
     // Sort years descending
     var sortedKeys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
-    return {for (var k in sortedKeys) k: groups[k]!};
+    
+    // Sort questions within each year group by their number
+    Map<String, List<ExamQuestion>> sortedGroups = {};
+    for (var k in sortedKeys) {
+      final yearList = groups[k]!;
+      yearList.sort((a, b) => a.questionNumber.compareTo(b.questionNumber));
+      sortedGroups[k] = yearList;
+    }
+    
+    return sortedGroups;
   }
 
   @override
