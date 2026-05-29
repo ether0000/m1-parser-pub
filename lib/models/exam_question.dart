@@ -57,24 +57,45 @@ class ExamQuestion {
   });
 
   factory ExamQuestion.fromFirestore(DocumentSnapshot doc) {
-    Map data = doc.data() as Map<String, dynamic>;
+    final rawData = doc.data();
+    if (rawData == null || rawData is! Map) {
+      throw FormatException("Document ${doc.id} contains invalid or null data");
+    }
+    final Map<dynamic, dynamic> data = rawData;
+    
+    // 安全地轉換 List<String> 類型，防止欄位為 null 或內含非 String 元素時崩潰
+    List<String> parseStringList(dynamic field) {
+      if (field is List) {
+        return field.map((e) => e.toString()).toList();
+      }
+      return [];
+    }
+
+    // 安全地轉換 DateTime 類型，防禦 Timestamp、String 或是整數 timestamp 等各種型態
+    DateTime? parseDateTime(dynamic field) {
+      if (field is Timestamp) return field.toDate();
+      if (field is String) return DateTime.tryParse(field);
+      if (field is int) return DateTime.fromMillisecondsSinceEpoch(field);
+      return null;
+    }
+
     return ExamQuestion(
       id: doc.id,
-      year: data['year'] ?? '',
-      subject: data['subject'] ?? '',
-      content: data['content'] ?? '',
-      options: List<String>.from(data['options'] ?? []),
+      year: data['year']?.toString() ?? '',
+      subject: data['subject']?.toString() ?? '',
+      content: data['content']?.toString() ?? '',
+      options: parseStringList(data['options']),
       correctAnswers: _parseAnswers(data['correctAnswers'] ?? data['correctAnswer']),
-      userNote: data['userNote'] ?? '',
-      errorCount: data['errorCount'] ?? 0,
-      correctCount: data['correctCount'] ?? 0,
-      attemptCount: data['attemptCount'] ?? 0,
-      lastAttemptDate: (data['lastAttemptDate'] as Timestamp?)?.toDate(),
-      isMastered: data['isMastered'] ?? false,
-      isFavorite: data['isFavorite'] ?? false,
-      categoryIds: List<String>.from(data['categoryIds'] ?? []),
-      tags: List<String>.from(data['tags'] ?? []),
-      nextReviewDate: (data['nextReviewDate'] as Timestamp?)?.toDate(),
+      userNote: data['userNote']?.toString() ?? '',
+      errorCount: int.tryParse(data['errorCount']?.toString() ?? '0') ?? 0,
+      correctCount: int.tryParse(data['correctCount']?.toString() ?? '0') ?? 0,
+      attemptCount: int.tryParse(data['attemptCount']?.toString() ?? '0') ?? 0,
+      lastAttemptDate: parseDateTime(data['lastAttemptDate']),
+      isMastered: data['isMastered'] == true,
+      isFavorite: data['isFavorite'] == true,
+      categoryIds: parseStringList(data['categoryIds']),
+      tags: parseStringList(data['tags']),
+      nextReviewDate: parseDateTime(data['nextReviewDate']),
     );
   }
 

@@ -18,42 +18,67 @@ class AppProvider with ChangeNotifier {
   StreamSubscription? _userStatsSub;
   DateTime? _examDate;
 
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+
   AppProvider(this._service) {
     _init();
   }
 
   void _init() {
-    _questionsSub = _service.getQuestionsStream().listen((qs) {
-      _questions = qs;
-      _isLoading = false;
-      notifyListeners();
-    });
+    _questionsSub = _service.getQuestionsStream().listen(
+      (qs) {
+        _questions = qs;
+        _isLoading = false;
+        _errorMessage = null;
+        notifyListeners();
+      },
+      onError: (error) {
+        _isLoading = false;
+        _errorMessage = "載入題目發生錯誤，請檢查網路連線。";
+        notifyListeners();
+      },
+    );
 
-    _sessionsSub = _service.getQuizSessionsStream().listen((ss) {
-      _sessions = ss;
-      notifyListeners();
-    });
+    _sessionsSub = _service.getQuizSessionsStream().listen(
+      (ss) {
+        _sessions = ss;
+        notifyListeners();
+      },
+      onError: (error) {
+        // Log stream error
+      },
+    );
 
-    _userStatsSub = _service.getUserStatsStream().listen((stats) {
-      _userStats = stats;
-      notifyListeners();
-    });
+    _userStatsSub = _service.getUserStatsStream().listen(
+      (stats) {
+        _userStats = stats;
+        notifyListeners();
+      },
+      onError: (error) {
+        // Log stream error
+      },
+    );
 
     _loadInitialData();
   }
 
   Future<void> _loadInitialData() async {
-    _userStats = await _service.getUserStats();
-    _examDate = await _service.fetchExamDate();
-    
-    // Check-in / Login Streak logic
-    final updatedStats = _userStats.resetDailyIfNeeded();
-    if (updatedStats != _userStats) {
-      _userStats = updatedStats;
-      await _service.updateUserStats(_userStats);
+    try {
+      _userStats = await _service.getUserStats();
+      _examDate = await _service.fetchExamDate();
+      
+      // Check-in / Login Streak logic
+      final updatedStats = _userStats.resetDailyIfNeeded();
+      if (updatedStats != _userStats) {
+        _userStats = updatedStats;
+        await _service.updateUserStats(_userStats);
+      }
+    } catch (e) {
+      _errorMessage = "無法從雲端同步個人進度與設定";
+    } finally {
+      notifyListeners();
     }
-    
-    notifyListeners();
   }
 
   List<ExamQuestion> get questions => _questions;

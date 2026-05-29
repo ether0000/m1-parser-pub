@@ -46,6 +46,12 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
     _loadQuestions();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadQuestions() async {
     final service = Provider.of<FirestoreService>(context, listen: false);
     // For management, we might want to fetch all or use pagination. 
@@ -102,80 +108,90 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
     );
   }
 
-  Widget _buildGroupedList() {
+  List<_ListElement> get _flattenedElements {
+    final List<_ListElement> elements = [];
     final grouped = _groupedQuestions;
-    if (grouped.isEmpty) {
+    for (var entry in grouped.entries) {
+      final year = entry.key;
+      final questions = entry.value;
+      final isExpanded = _expandedYears.contains(year);
+      elements.add(_YearHeaderElement(year, questions.length));
+      if (isExpanded) {
+        for (var q in questions) {
+          elements.add(_QuestionElement(q));
+        }
+      }
+    }
+    return elements;
+  }
+
+  Widget _buildGroupedList() {
+    final elements = _flattenedElements;
+    if (elements.isEmpty) {
       return const Center(child: Text('查無題目', style: TextStyle(color: Color(0xFF8E8E93))));
     }
 
     return ListView.builder(
-      itemCount: grouped.length,
+      itemCount: elements.length,
       itemBuilder: (context, index) {
-        String year = grouped.keys.elementAt(index);
-        List<ExamQuestion> questions = grouped[year]!;
-        bool isExpanded = _expandedYears.contains(year);
+        final element = elements[index];
+        if (element is _YearHeaderElement) {
+          final year = element.year;
+          final isExpanded = _expandedYears.contains(year);
+          final count = element.count;
 
-        return Column(
-          children: [
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  if (isExpanded) {
-                    _expandedYears.remove(year);
-                  } else {
-                    _expandedYears.add(year);
-                  }
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                color: const Color(0xFFE5E5EA),
-                child: Row(
-                  children: [
-                    Icon(
-                      isExpanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_right,
-                      size: 16,
-                      color: const Color(0xFF8E8E93),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$year 年',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                    ),
-                    const SizedBox(width: 8),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minSize: 0,
-                      child: const Icon(CupertinoIcons.pencil_circle, size: 20, color: Color(0xFF007AFF)),
-                      onPressed: () => _showUpdateYearDialog(year),
-                    ),
-                    const SizedBox(width: 8),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minSize: 0,
-                      child: const Icon(CupertinoIcons.trash_circle, size: 20, color: Color(0xFFFF3B30)),
-                      onPressed: () => _confirmDeleteByYear(year),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${questions.length} 題',
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
-                    ),
-                  ],
-                ),
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedYears.remove(year);
+                } else {
+                  _expandedYears.add(year);
+                }
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: const Color(0xFFE5E5EA),
+              child: Row(
+                children: [
+                  Icon(
+                    isExpanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_right,
+                    size: 16,
+                    color: const Color(0xFF8E8E93),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$year 年',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                  ),
+                  const SizedBox(width: 8),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 0,
+                    child: const Icon(CupertinoIcons.pencil_circle, size: 20, color: Color(0xFF007AFF)),
+                    onPressed: () => _showUpdateYearDialog(year),
+                  ),
+                  const SizedBox(width: 8),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 0,
+                    child: const Icon(CupertinoIcons.trash_circle, size: 20, color: Color(0xFFFF3B30)),
+                    onPressed: () => _confirmDeleteByYear(year),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$count 題',
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                  ),
+                ],
               ),
             ),
-            if (isExpanded)
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: questions.length,
-                itemBuilder: (context, qIndex) {
-                  return _buildQuestionTile(questions[qIndex]);
-                },
-              ),
-          ],
-        );
+          );
+        } else if (element is _QuestionElement) {
+          return _buildQuestionTile(element.question);
+        }
+        return const SizedBox.shrink();
       },
     );
   }
@@ -187,9 +203,9 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: CupertinoButton(
-        padding: EdgeInsets.zero,
-        onPressed: () => _editQuestion(q),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _editQuestion(q),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -199,7 +215,13 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
                 children: [
                   Text(q.year, style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93))),
                   const SizedBox(width: 8),
-                  Text(q.subject, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF007AFF))),
+                  Expanded(
+                    child: Text(
+                      q.subject,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF007AFF)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -454,4 +476,15 @@ class _ManageQuestionsScreenState extends State<ManageQuestionsScreen> {
       ),
     );
   }
+}
+
+abstract class _ListElement {}
+class _YearHeaderElement extends _ListElement {
+  final String year;
+  final int count;
+  _YearHeaderElement(this.year, this.count);
+}
+class _QuestionElement extends _ListElement {
+  final ExamQuestion question;
+  _QuestionElement(this.question);
 }

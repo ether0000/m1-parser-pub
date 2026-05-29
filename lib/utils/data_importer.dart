@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import '../models/exam_question.dart';
 import '../services/firestore_service.dart';
@@ -27,10 +28,19 @@ class DataImporter {
     }
   }
 
-  static Future<void> importJsonContent(String jsonContent, FirestoreService firestoreService, Set<String> existingIds) async {
+  static List<Map<String, dynamic>> _parseJsonInBackground(String jsonContent) {
+    final decoded = json.decode(jsonContent);
+    if (decoded is List) {
+      return List<Map<String, dynamic>>.from(
+        decoded.map((item) => Map<String, dynamic>.from(item as Map)),
+      );
+    }
+    return [];
+  }
 
+  static Future<void> importJsonContent(String jsonContent, FirestoreService firestoreService, Set<String> existingIds) async {
     try {
-      final List<dynamic> data = json.decode(jsonContent);
+      final List<Map<String, dynamic>> data = await compute(_parseJsonInBackground, jsonContent);
       List<ExamQuestion> newQuestions = [];
 
       for (var item in data) {
@@ -39,10 +49,17 @@ class DataImporter {
           // Handle correct answers (could be int or List<int>)
           dynamic rawCorrect = item['correctAnswer'];
           List<int> correctIndices = [];
+          
           if (rawCorrect is List) {
-            correctIndices = List<int>.from(rawCorrect).map((e) => e - 1).toList();
+            correctIndices = rawCorrect
+                .map((e) => int.tryParse(e.toString()) ?? 1)
+                .map((e) => e - 1)
+                .toList();
+          } else if (rawCorrect != null) {
+            final parsedInt = int.tryParse(rawCorrect.toString()) ?? 1;
+            correctIndices = [parsedInt - 1];
           } else {
-            correctIndices = [((rawCorrect as int?) ?? 1) - 1];
+            correctIndices = [0];
           }
 
           ExamQuestion q = ExamQuestion(
@@ -50,7 +67,7 @@ class DataImporter {
             year: item['year']?.toString() ?? '',
             subject: item['subject']?.toString() ?? '',
             content: item['content']?.toString() ?? '',
-            options: List<String>.from(item['options'] ?? []),
+            options: List<String>.from((item['options'] ?? []).map((e) => e.toString())),
             correctAnswers: correctIndices,
             userNote: item['userNote']?.toString() ?? '',
           );

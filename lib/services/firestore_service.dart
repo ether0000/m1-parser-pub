@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/exam_question.dart';
 import '../models/quiz_session.dart';
 import '../models/user_stats.dart';
@@ -6,10 +7,23 @@ import '../models/user_stats.dart';
 class FirestoreService {
   final CollectionReference _questionsCollection =
       FirebaseFirestore.instance.collection('ExamQuestions');
-  final CollectionReference _sessionsCollection =
-      FirebaseFirestore.instance.collection('QuizSessions');
-  final CollectionReference _settingsCollection =
-      FirebaseFirestore.instance.collection('UserSettings');
+
+  String get _currentUserId {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("User must be authenticated to access personal statistics");
+    }
+    return user.uid;
+  }
+
+  DocumentReference get _userDoc =>
+      FirebaseFirestore.instance.collection('users').doc(_currentUserId);
+
+  CollectionReference get _sessionsCollection =>
+      _userDoc.collection('QuizSessions');
+
+  CollectionReference get _settingsCollection =>
+      _userDoc.collection('UserSettings');
 
   // Stream all questions (Optimized with local cache priority)
   Stream<List<ExamQuestion>> getQuestionsStream() {
@@ -192,14 +206,32 @@ class FirestoreService {
   // User Stats Methods
   Future<UserStats> getUserStats() async {
     final doc = await _settingsCollection.doc('stats').get();
-    return UserStats.fromFirestore(doc).resetDailyIfNeeded();
+    final stats = UserStats.fromFirestore(doc);
+    final resetStats = stats.resetDailyIfNeeded();
+    print("DEBUG [getUserStats]: original lastLoginDate=${stats.lastLoginDate}, dailyDone=${stats.dailyQuestionsDone}");
+    print("DEBUG [getUserStats]: now=${DateTime.now()}, reset lastLoginDate=${resetStats.lastLoginDate}, dailyDone=${resetStats.dailyQuestionsDone}");
+    if (resetStats != stats) {
+      print("DEBUG [getUserStats]: WRITING reset stats to Firestore");
+      await updateUserStats(resetStats);
+    }
+    return resetStats;
   }
 
   Stream<UserStats> getUserStatsStream() {
     return _settingsCollection
         .doc('stats')
         .snapshots()
-        .map((doc) => UserStats.fromFirestore(doc).resetDailyIfNeeded());
+        .asyncMap((doc) async {
+          final stats = UserStats.fromFirestore(doc);
+          final resetStats = stats.resetDailyIfNeeded();
+          print("DEBUG [getUserStatsStream]: original lastLoginDate=${stats.lastLoginDate}, dailyDone=${stats.dailyQuestionsDone}");
+          print("DEBUG [getUserStatsStream]: now=${DateTime.now()}, reset lastLoginDate=${resetStats.lastLoginDate}, dailyDone=${resetStats.dailyQuestionsDone}");
+          if (resetStats != stats) {
+            print("DEBUG [getUserStatsStream]: WRITING reset stats to Firestore");
+            await updateUserStats(resetStats);
+          }
+          return resetStats;
+        });
   }
 
   Future<void> updateUserStats(UserStats stats) async {
@@ -336,49 +368,26 @@ class FirestoreService {
 
 
   // Atomically save QuizSession and all updated Question states in one Batch
-  Future<void> saveQuizResult(QuizSession session, List<ExamQuestion> updatedQuestions) async {
+  Future<void> saveQuizResult(
+    QuizSession session, 
+    List<ExamQuestion> updatedQuestions, 
+    UserStats updatedStats,
+  ) async {
     WriteBatch batch = FirebaseFirestore.instance.batch();
     
     // 1. Save Session
     DocumentReference sessionRef = _sessionsCollection.doc(session.sessionId);
     batch.set(sessionRef, session.toFirestore());
 
-    // 2. Save Updated Questions (with Spaced Repetition logic)
-    int clearedErrors = 0;
+    // 2. Save Updated Questions
     for (var q in updatedQuestions) {
-      // Logic for Spaced Repetition
-      final bool wasCorrect = !session.wrongQuestionIds.contains(q.id);
-      
-      if (wasCorrect) {
-        // Only count as "clearing an error" if it was a frequent error
-        if (q.errorCount >= 2) {
-          clearedErrors++;
-        }
-        
-        // Spaced Repetition interval increases
-        int days = (q.correctCount * 3).clamp(1, 30);
-        q.nextReviewDate = DateTime.now().add(Duration(days: days));
-      } else {
-        // Wrong: review tomorrow
-        q.nextReviewDate = DateTime.now().add(const Duration(days: 1));
-      }
-      
       DocumentReference qRef = _questionsCollection.doc(q.id);
       batch.update(qRef, q.toFirestore());
     }
 
-    // 3. Update User Stats for Daily Quests
-    final stats = await getUserStats();
-    final newStats = UserStats(
-      loginStreak: stats.loginStreak,
-      lastLoginDate: stats.lastLoginDate,
-      dailyQuestionsDone: stats.dailyQuestionsDone + session.totalQuestions,
-      dailyErrorsCleared: stats.dailyErrorsCleared + clearedErrors,
-      totalPoints: stats.totalPoints + (session.totalQuestions * 10) + (clearedErrors * 50),
-    ).resetDailyIfNeeded(); // Ensure it's the right day
-    
+    // 3. Save User Stats
     DocumentReference statsRef = _settingsCollection.doc('stats');
-    batch.set(statsRef, newStats.toFirestore(), SetOptions(merge: true));
+    batch.set(statsRef, updatedStats.toFirestore(), SetOptions(merge: true));
 
     await batch.commit().timeout(const Duration(seconds: 15));
   }

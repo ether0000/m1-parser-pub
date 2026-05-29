@@ -49,7 +49,8 @@ class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, child) {
+      child: widget.child,
+      builder: (context, cachedChild) {
         return Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -62,7 +63,7 @@ class _AnimatedGradientBackgroundState extends State<AnimatedGradientBackground>
               ],
             ),
           ),
-          child: widget.child,
+          child: cachedChild,
         );
       },
     );

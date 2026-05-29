@@ -138,8 +138,8 @@ class ReviewScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            TextField(
-                              controller: TextEditingController(text: q.userNote),
+                            TextFormField(
+                              initialValue: q.userNote,
                               maxLines: 4,
                               style: const TextStyle(color: Colors.black87),
                               decoration: InputDecoration(
