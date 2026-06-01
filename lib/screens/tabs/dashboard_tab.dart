@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import '../../services/firestore_service.dart';
 import '../../models/exam_question.dart';
-import 'package:intl/intl.dart';
 
 import '../../providers/app_provider.dart';
 import '../quiz_screen.dart';
 
+/// 學習看板 Tab
+/// 
+/// 採用 [StatefulWidget] 維護本地的倒數日期的快取加載、常錯隨機抽測題目狀態。
+/// 透過 [context.watch<AppProvider>] 響應全域的學習進度數據。
 class DashboardTab extends StatefulWidget {
   final Function(int, {int initialSubTabIndex})? onNavigate;
   
   const DashboardTab({
-    Key? key, 
+    super.key, 
     this.onNavigate,
-  }) : super(key: key);
+  });
 
   @override
   State<DashboardTab> createState() => _DashboardTabState();
@@ -32,56 +34,100 @@ class _DashboardTabState extends State<DashboardTab> {
   void initState() {
     super.initState();
     _loadExamDate();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _pickRandomFrequentError());
   }
 
+  /// 透過 didChangeDependencies 響應全域 AppProvider 數據變化
+  /// 
+  /// 當 AppProvider 資料更新時（例如使用者剛完成測驗、錯題數變動），此方法會被觸發。
+  /// 我們在此更新局部狀態（如常錯隨機抽測題目），因為這是在 build 之前執行的生命週期，
+  /// 直接修改變數後續會直接套用到 build 中，故不需也不應在此呼叫 `setState()`，可避免多餘的重繪。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    final appProvider = Provider.of<AppProvider>(context);
+    final freqErrors = appProvider.frequentErrors;
+    
+    if (freqErrors.isEmpty) {
+      if (_randomFrequentError != null) {
+        _randomFrequentError = null;
+        _showAnswer = false;
+      }
+    } else {
+      // 若當前無隨機題，或目前的隨機題已經不在常錯清單內，則重新抽取一題
+      if (_randomFrequentError == null || !freqErrors.any((q) => q.id == _randomFrequentError!.id)) {
+        _randomFrequentError = (List<ExamQuestion>.from(freqErrors)..shuffle()).first;
+        _showAnswer = false;
+      }
+    }
+  }
+
+  /// 隨機抽取一道常錯題目以供碎型學習
+  /// 
+  /// 用於看板的「常錯隨機抽測」小卡片。使用者在掌握一題後，可點選「換一題」按鈕，
+  /// 這會觸發 `setState()`，讓 UI 重新綁定並渲染新的題目與未顯示答案狀態。
   void _pickRandomFrequentError() {
     final appProvider = Provider.of<AppProvider>(context, listen: false);
     final freqErrors = appProvider.frequentErrors;
     if (freqErrors.isNotEmpty) {
       setState(() {
-        // Only pick new if current is null or no longer a frequent error
-        if (_randomFrequentError == null || !freqErrors.any((q) => q.id == _randomFrequentError!.id)) {
-          _randomFrequentError = (freqErrors..shuffle()).first;
-          _showAnswer = false;
-        }
+        _randomFrequentError = (List<ExamQuestion>.from(freqErrors)..shuffle()).first;
+        _showAnswer = false;
       });
     } else {
       if (_randomFrequentError != null) {
-        setState(() => _randomFrequentError = null);
+        setState(() {
+          _randomFrequentError = null;
+          _showAnswer = false;
+        });
       }
     }
   }
 
+  /// 載入考試日期，實作「快取優先 (SharedPreferences)」並從 Firestore 同步的複合策略
+  /// 
+  /// 為了提供無縫的體驗，此處先載入本地的快取數據（如果有），讓 UI 瞬間渲染出來，
+  /// 隨後發起雲端非同步請求取得最新日期。同時在更新 UI 時加入「內容變更檢查」，
+  /// 避免在資料無變動的情況下觸發多餘的 `setState()`，減少 Flutter widget tree 的重構次數。
   Future<void> _loadExamDate() async {
-    // 1. Try local cache first for immediate UI
+    final service = Provider.of<FirestoreService>(context, listen: false);
     final prefs = await SharedPreferences.getInstance();
     final localDateStr = prefs.getString('examDate');
     
-    if (mounted && localDateStr != null) {
+    DateTime? localDate;
+    if (localDateStr != null) {
+      localDate = DateTime.tryParse(localDateStr);
+    }
+
+    if (mounted && localDate != null) {
       setState(() {
-        _examDate = DateTime.tryParse(localDateStr);
+        _examDate = localDate;
         _isLoadingDate = false;
       });
     }
 
-    // 2. Fetch from Firestore for cloud sync
     try {
-      final service = Provider.of<FirestoreService>(context, listen: false);
       final remoteDate = await service.fetchExamDate();
       
       if (remoteDate != null && mounted) {
-        setState(() {
-          _examDate = remoteDate;
-          _isLoadingDate = false;
-        });
-        // Sync back to local
+        // 唯有當前為 null、或與雲端日期不同，或尚未載入完成時，才進行 setState
+        if (_examDate == null || !_examDate!.isAtSameMomentAs(remoteDate) || _isLoadingDate) {
+          setState(() {
+            _examDate = remoteDate;
+            _isLoadingDate = false;
+          });
+        }
         await prefs.setString('examDate', remoteDate.toIso8601String());
       } else if (mounted) {
-        setState(() => _isLoadingDate = false);
+        if (_isLoadingDate) {
+          setState(() => _isLoadingDate = false);
+        }
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingDate = false);
+      // 發生異常（如離線）時，若仍處於讀取狀態則更新讀取旗標
+      if (mounted && _isLoadingDate) {
+        setState(() => _isLoadingDate = false);
+      }
     }
   }
 
@@ -94,57 +140,51 @@ class _DashboardTabState extends State<DashboardTab> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F7),
-      body: Builder(builder: (context) {
-        // Check and update random error if needed on every build
-        final freqErrors = appProvider.frequentErrors;
-        if (freqErrors.isEmpty && _randomFrequentError != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _randomFrequentError = null);
-          });
-        } else if (freqErrors.isNotEmpty && (_randomFrequentError == null || !freqErrors.any((q) => q.id == _randomFrequentError!.id))) {
-           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _pickRandomFrequentError();
-          });
-        }
-
-        return CustomScrollView(
-          slivers: [
-            const CupertinoSliverNavigationBar(
-              largeTitle: Text('學習看板'),
-              backgroundColor: Color(0xFFF2F2F7),
-              border: null,
+      body: CustomScrollView(
+        slivers: [
+          const CupertinoSliverNavigationBar(
+            largeTitle: Text('學習看板'),
+            backgroundColor: Color(0xFFF2F2F7),
+            border: null,
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _buildCountdownCard(appProvider),
+                const SizedBox(height: 16),
+                _buildDailyQuestsCard(appProvider),
+                const SizedBox(height: 16),
+                if (appProvider.scheduledReviews.isNotEmpty) ...[
+                  _buildScheduledReviewSection(appProvider),
+                  const SizedBox(height: 16),
+                ],
+                if (_randomFrequentError != null) ...[
+                  _buildRandomFrequentErrorCard(),
+                  const SizedBox(height: 16),
+                ],
+                _buildFrequentErrorStatsCard(appProvider.frequentErrors.length),
+                const SizedBox(height: 16),
+                _buildProgressCard(doneCount, totalCount),
+                const SizedBox(height: 100),
+              ]),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _buildCountdownCard(appProvider),
-                  const SizedBox(height: 16),
-                  _buildDailyQuestsCard(appProvider),
-                  const SizedBox(height: 16),
-                  if (appProvider.scheduledReviews.isNotEmpty) ...[
-                    _buildScheduledReviewSection(appProvider),
-                    const SizedBox(height: 16),
-                  ],
-                  if (_randomFrequentError != null) ...[
-                    _buildRandomFrequentErrorCard(),
-                    const SizedBox(height: 16),
-                  ],
-                  _buildFrequentErrorStatsCard(appProvider.frequentErrors.length),
-                  const SizedBox(height: 16),
-                  _buildProgressCard(doneCount, totalCount),
-                  const SizedBox(height: 100),
-                ]),
-              ),
-            ),
-          ],
-        );
-      }),
+          ),
+        ],
+      ),
     );
   }
 
+  /// 倒數計時與學習天數卡片
   Widget _buildCountdownCard(AppProvider appProvider) {
-    if (_isLoadingDate) return const CupertinoActivityIndicator();
+    if (_isLoadingDate) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: CupertinoActivityIndicator(),
+        ),
+      );
+    }
 
     int? daysLeft;
     if (_examDate != null) {
@@ -163,7 +203,11 @@ class _DashboardTabState extends State<DashboardTab> {
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.blueAccent.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: const Color(0xFF007AFF).withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -190,7 +234,7 @@ class _DashboardTabState extends State<DashboardTab> {
               if (streak > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
                   child: Row(
                     children: [
                       const Icon(Icons.local_fire_department, color: Colors.orange, size: 18),
@@ -201,8 +245,8 @@ class _DashboardTabState extends State<DashboardTab> {
                 ),
               CupertinoButton(
                 padding: EdgeInsets.zero,
-                child: const Icon(CupertinoIcons.settings, color: Colors.white, size: 20),
                 onPressed: _showDatePicker,
+                child: const Icon(CupertinoIcons.settings, color: Colors.white, size: 20),
               )
             ],
           ),
@@ -221,6 +265,11 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
+  /// 彈出 iOS 風格之考期日期選擇器
+  /// 
+  /// 在對話框中調用 `CupertinoDatePicker` 的 `onDateTimeChanged` 時，會觸發局部 `setState()` 讓看板上的倒數文字即時刷新。
+  /// 點選「儲存日期」按鈕時，會發起非同步網路寫入，同步更新 Firestore 設定以及 SharedPreferences 本地快取，
+  /// 更新完成後呼叫 `Navigator.pop` 關閉彈出視窗，流程清晰且無洩漏風險。
   void _showDatePicker() {
     showCupertinoModalPopup(
       context: context,
@@ -244,11 +293,9 @@ class _DashboardTabState extends State<DashboardTab> {
               onPressed: () async {
                 if (_examDate == null) return;
                 
-                // Save to Firestore
                 final service = Provider.of<FirestoreService>(context, listen: false);
                 await service.saveExamDate(_examDate!);
                 
-                // Save to Local
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setString('examDate', _examDate!.toIso8601String());
                 
@@ -261,6 +308,7 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
+  /// 學習進度條卡片
   Widget _buildProgressCard(int doneCount, int totalCount) {
     double progress = totalCount > 0 ? doneCount / totalCount : 0;
     return Container(
@@ -295,67 +343,7 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
-  Widget _buildChartCard(List<MapEntry<String, double>> topWeaknesses) {
-    final displayList = topWeaknesses.take(5).toList();
-    
-    return Container(
-      height: 300,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('弱點分析 (TOP 5 錯誤標籤)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-          Expanded(
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: 100,
-                barGroups: displayList.asMap().entries.map((e) {
-                  return BarChartGroupData(
-                    x: e.key,
-                    barRods: [
-                      BarChartRodData(
-                        toY: e.value.value,
-                        color: const Color(0xFFFF3B30),
-                        width: 16,
-                        borderRadius: BorderRadius.circular(4),
-                      )
-                    ],
-                  );
-                }).toList(),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= displayList.length) return const Text('');
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Text(
-                            displayList[value.toInt()].key.substring(0, displayList[value.toInt()].key.length.clamp(0, 4)),
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                ),
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
+  /// 碎型複習卡片：展示一個常錯的題目
   Widget _buildRandomFrequentErrorCard() {
     final q = _randomFrequentError!;
     return GestureDetector(
@@ -366,7 +354,7 @@ class _DashboardTabState extends State<DashboardTab> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
           ],
         ),
         child: Column(
@@ -436,6 +424,7 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
+  /// 常錯題目特訓引導按鈕
   Widget _buildFrequentErrorStatsCard(int freqErrorCount) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -456,7 +445,7 @@ class _DashboardTabState extends State<DashboardTab> {
             ),
           ),
           ElevatedButton(
-            onPressed: () => widget.onNavigate?.call(1), // Nav to PracticeTab
+            onPressed: () => widget.onNavigate?.call(1),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF3B30),
               foregroundColor: Colors.white,
@@ -470,6 +459,7 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
+  /// 每日進度委託任務
   Widget _buildDailyQuestsCard(AppProvider appProvider) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -519,6 +509,7 @@ class _DashboardTabState extends State<DashboardTab> {
     );
   }
 
+  /// 今日排程複習（基於間隔重複演算法計算出的推薦複習清單）
   Widget _buildScheduledReviewSection(AppProvider appProvider) {
     final reviews = appProvider.scheduledReviews;
     return Container(
@@ -526,7 +517,7 @@ class _DashboardTabState extends State<DashboardTab> {
       decoration: BoxDecoration(
         color: const Color(0xFFFFF9E6),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,7 +546,7 @@ class _DashboardTabState extends State<DashboardTab> {
                   CupertinoPageRoute(
                     builder: (context) => QuizScreen(
                       questions: reviews,
-                      isSpecialTraining: true, // Use special training UI for reviews
+                      isSpecialTraining: true,
                     ),
                   ),
                 );

@@ -8,12 +8,21 @@ import '../utils/animated_background.dart';
 import '../utils/glassmorphism.dart';
 import 'review_screen.dart';
 
+/// 測驗練習畫面
+/// 
+/// 展示題目與選項，並使用 [QuizProvider] (結合 [ChangeNotifier]) 來管理當前答題進度、答案判定與星星標記。
+/// 測驗結束後將會載入 [ReviewScreen] 以便總結與檢討。
 class QuizScreen extends StatelessWidget {
   final List<ExamQuestion> questions;
   final bool isSpecialTraining;
 
-  const QuizScreen({Key? key, required this.questions, this.isSpecialTraining = false}) : super(key: key);
+  const QuizScreen({
+    super.key, 
+    required this.questions, 
+    this.isSpecialTraining = false,
+  });
 
+  /// 顯示本次測驗或特訓總結的對話框
   void _showSummaryDialog(BuildContext context, QuizProvider quiz) {
     int answeredCount = quiz.userAnswers.length;
     int correctCount = 0;
@@ -34,8 +43,8 @@ class QuizScreen extends StatelessWidget {
           CupertinoDialogAction(
             child: const Text('確定'),
             onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Exit QuizScreen
+              Navigator.pop(context); // 關閉對話框
+              Navigator.pop(context); // 退出 QuizScreen 畫面
             },
           )
         ],
@@ -66,11 +75,15 @@ class QuizScreen extends StatelessWidget {
             appBar: AppBar(
               title: Column(
                 children: [
-                  Text('第 ${currentIndex + 1} 題 / 共 ${questions.length} 題',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  Text(
+                    '第 ${currentIndex + 1} 題 / 共 ${questions.length} 題',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
                   if (qNum > 0)
-                    Text('${currentQ.year} 年 第 $qNum 題',
-                        style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                    Text(
+                      '${currentQ.year} 年 第 $qNum 題',
+                      style: const TextStyle(fontSize: 10, color: Colors.black54),
+                    ),
                 ],
               ),
               backgroundColor: Colors.transparent,
@@ -83,7 +96,10 @@ class QuizScreen extends StatelessWidget {
                     child: const Text('結束特訓', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                   ),
                 IconButton(
-                  icon: Icon(currentQ.isFavorite ? Icons.star_rounded : Icons.star_border_rounded, color: Colors.amber),
+                  icon: Icon(
+                    currentQ.isFavorite ? Icons.star_rounded : Icons.star_border_rounded, 
+                    color: Colors.amber,
+                  ),
                   onPressed: quiz.toggleFavorite,
                 )
               ],
@@ -109,19 +125,19 @@ class QuizScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 20),
                               ...List.generate(currentQ.options.length, (index) {
-                                Color bgColor = Colors.black.withOpacity(0.05);
+                                Color bgColor = Colors.black.withValues(alpha: 0.05);
                                 Icon? trailingIcon;
                                 Color textColor = Colors.black87;
 
                                 if (quiz.hasAnsweredCurrent) {
                                   if (currentQ.correctAnswers.contains(index)) {
-                                    bgColor = Colors.green.withOpacity(0.2);
+                                    bgColor = Colors.green.withValues(alpha: 0.2);
                                     textColor = Colors.green.shade900;
                                     if (index == quiz.selectedOption) {
                                       trailingIcon = const Icon(Icons.check_circle_rounded, color: Colors.green);
                                     }
                                   } else if (index == quiz.selectedOption) {
-                                    bgColor = Colors.redAccent.withOpacity(0.2);
+                                    bgColor = Colors.redAccent.withValues(alpha: 0.2);
                                     textColor = Colors.redAccent.shade700;
                                     trailingIcon = const Icon(Icons.cancel_rounded, color: Colors.redAccent);
                                   }
@@ -147,7 +163,7 @@ class QuizScreen extends StatelessWidget {
                                             alignment: Alignment.center,
                                             decoration: BoxDecoration(
                                               shape: BoxShape.circle,
-                                              color: Colors.black.withOpacity(0.05),
+                                              color: Colors.black.withValues(alpha: 0.05),
                                             ),
                                             child: Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
                                           ),
@@ -155,13 +171,14 @@ class QuizScreen extends StatelessWidget {
                                           Expanded(
                                             child: Text(currentQ.options[index], style: TextStyle(fontSize: 16, color: textColor)),
                                           ),
-                                          if (trailingIcon != null) trailingIcon
+                                          // ignore: use_null_aware_elements
+                                          if (trailingIcon != null) trailingIcon,
                                         ],
                                       ),
                                     ),
                                   ),
                                 );
-                              }).toList(),
+                              }), // 移除多餘的 toList()
                             ],
                           ),
                         ),

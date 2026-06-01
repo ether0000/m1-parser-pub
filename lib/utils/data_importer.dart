@@ -20,11 +20,11 @@ class DataImporter {
           final String response = await rootBundle.loadString(path);
           await importJsonContent(response, firestoreService, existingIds);
         } catch (e) {
-          print("Could not load $path: $e");
+          debugPrint("Could not load $path: $e");
         }
       }
     } catch (e) {
-      print("Error importing JSON: $e");
+      debugPrint("Error importing JSON: $e");
     }
   }
 
@@ -76,12 +76,12 @@ class DataImporter {
       }
 
       if (newQuestions.isNotEmpty) {
-        print("Importing ${newQuestions.length} new questions...");
+        debugPrint("Importing ${newQuestions.length} new questions...");
         await firestoreService.batchLoadQuestions(newQuestions);
-        print("Import complete!");
+        debugPrint("Import complete!");
       }
     } catch (e) {
-      print("Error parsing JSON content: $e");
+      debugPrint("Error parsing JSON content: $e");
       rethrow;
     }
   }

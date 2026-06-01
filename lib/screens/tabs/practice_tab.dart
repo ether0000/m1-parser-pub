@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/exam_question.dart';
 import '../../providers/app_provider.dart';
 import '../quiz_screen.dart';
 
 class PracticeTab extends StatefulWidget {
-  const PracticeTab({Key? key}) : super(key: key);
+  const PracticeTab({super.key});
 
   @override
   State<PracticeTab> createState() => _PracticeTabState();
@@ -16,75 +17,99 @@ class _PracticeTabState extends State<PracticeTab> {
   bool _includeMastered = false;
   bool _isSpecialTraining = false;
 
-  void _showQuizConfig(BuildContext context) {
+  void _showQuizConfig(BuildContext outerContext, AppProvider appProvider) {
     showCupertinoModalPopup(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
+      context: outerContext,
+      builder: (actionSheetContext) => CupertinoActionSheet(
         title: const Text('選擇測驗題數'),
         message: const Text('系統將隨機挑選符合條件的題目'),
         actions: [
           CupertinoActionSheetAction(
             child: const Text('20 題'),
-            onPressed: () => _startQuiz(context, 20),
+            onPressed: () => _startQuiz(outerContext, appProvider, 20, actionSheetContext: actionSheetContext),
           ),
           CupertinoActionSheetAction(
             child: const Text('30 題'),
-            onPressed: () => _startQuiz(context, 30),
+            onPressed: () => _startQuiz(outerContext, appProvider, 30, actionSheetContext: actionSheetContext),
           ),
           CupertinoActionSheetAction(
             child: const Text('50 題'),
-            onPressed: () => _startQuiz(context, 50),
+            onPressed: () => _startQuiz(outerContext, appProvider, 50, actionSheetContext: actionSheetContext),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           isDefaultAction: true,
           child: const Text('取消'),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(actionSheetContext),
         ),
       ),
     );
   }
 
-  void _startQuiz(BuildContext context, int? count, {bool isSpecial = false}) {
-    if (!isSpecial) Navigator.pop(context); // Close action sheet if not special
-    
-    final appProvider = Provider.of<AppProvider>(context, listen: false);
-    var pool = List<ExamQuestion>.from(appProvider.questions);
-    
-    if (isSpecial) {
-      pool = pool.where((q) => q.errorCount >= 2).toList();
+  void _startQuiz(BuildContext outerContext, AppProvider appProvider, int? count, {bool isSpecial = false, BuildContext? actionSheetContext}) {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    debugPrint('【1. 點擊確認數量】選擇題數: $count, 是否特訓: $isSpecial, 當前登入用戶 userId: $userId');
+
+    if (actionSheetContext != null && actionSheetContext.mounted) {
+      debugPrint('關閉 actionSheet');
+      Navigator.pop(actionSheetContext);
     }
 
-    if (!_includeMastered) {
-      pool.removeWhere((q) => q.isMastered);
-    }
+    try {
+      debugPrint('【2. 準備使用傳入的 AppProvider 題庫資料】');
+      debugPrint('全域題目 rawQuestions 數量: ${appProvider.questions.length}');
+      
+      var pool = List<ExamQuestion>.from(appProvider.questions);
+      debugPrint('【3. 資料篩選與洗牌】進入組合邏輯，當前初始題庫池大小: ${pool.length}');
 
-    pool.shuffle();
-    
-    if (!isSpecial) {
-      // Prioritize questions with higher error count or never attempted for normal mode
-      pool.sort((a, b) {
-        int aPriority = (a.errorCount > 0 || a.lastAttemptDate == null) ? 1 : 0;
-        int bPriority = (b.errorCount > 0 || b.lastAttemptDate == null) ? 1 : 0;
-        return bPriority.compareTo(aPriority);
-      });
-      if (count != null) {
-        pool = pool.take(count).toList();
+      if (isSpecial) {
+        pool = pool.where((q) => q.errorCount >= 2).toList();
+        debugPrint('篩選常錯題(錯誤次數>=2)後，題庫池大小: ${pool.length}');
       }
-    }
 
-    if (pool.isNotEmpty) {
-      Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (context) => QuizScreen(
-            questions: pool,
-            isSpecialTraining: isSpecial,
+      if (!_includeMastered) {
+        pool.removeWhere((q) => q.isMastered);
+        debugPrint('排除已精通題後，題庫池大小: ${pool.length}');
+      }
+
+      pool.shuffle();
+      debugPrint('已完成隨機洗牌');
+      
+      if (!isSpecial) {
+        // Prioritize questions with higher error count or never attempted for normal mode
+        pool.sort((a, b) {
+          int aPriority = (a.errorCount > 0 || a.lastAttemptDate == null) ? 1 : 0;
+          int bPriority = (b.errorCount > 0 || b.lastAttemptDate == null) ? 1 : 0;
+          return bPriority.compareTo(aPriority);
+        });
+        if (count != null) {
+          pool = pool.take(count).toList();
+          debugPrint('限制取前 $count 題後，題庫池大小: ${pool.length}');
+        }
+      }
+
+      if (pool.isNotEmpty) {
+        debugPrint('【4. 頁面跳轉】準備跳轉至測驗進行頁 QuizScreen，題目數: ${pool.length}');
+        if (!outerContext.mounted) {
+          debugPrint('【警告】outerContext 已失效，無法跳轉！');
+          return;
+        }
+        Navigator.push(
+          outerContext,
+          CupertinoPageRoute(
+            builder: (context) => QuizScreen(
+              questions: pool,
+              isSpecialTraining: isSpecial,
+            ),
           ),
-        ),
-      );
-    } else {
-      _showAlert(context, '目前無題目', isSpecial ? '尚未累積常錯題目，或已全部精通。' : '目前沒有符合條件的題目可以作答。');
+        );
+      } else {
+        debugPrint('沒有符合條件的題目，顯示警告');
+        if (!outerContext.mounted) return;
+        _showAlert(outerContext, '目前無題目', isSpecial ? '尚未累積常錯題目，或已全部精通。' : '目前沒有符合條件的題目可以作答。');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('【測驗初始化失敗】: $e \n 堆疊追蹤: $stackTrace');
     }
   }
 
@@ -106,6 +131,7 @@ class _PracticeTabState extends State<PracticeTab> {
 
   @override
   Widget build(BuildContext context) {
+    final appProvider = context.watch<AppProvider>();
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F7),
       body: CustomScrollView(
@@ -168,9 +194,9 @@ class _PracticeTabState extends State<PracticeTab> {
                     child: CupertinoButton.filled(
                       onPressed: () {
                         if (_isSpecialTraining) {
-                          _startQuiz(context, null, isSpecial: true);
+                          _startQuiz(context, appProvider, null, isSpecial: true);
                         } else {
-                          _showQuizConfig(context);
+                          _showQuizConfig(context, appProvider);
                         }
                       },
                       child: Text(_isSpecialTraining ? '開始特訓' : '開始測驗', style: const TextStyle(fontWeight: FontWeight.bold)),

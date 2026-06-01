@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class AnimatedGradientBackground extends StatefulWidget {
   final Widget child;
 
-  const AnimatedGradientBackground({Key? key, required this.child}) : super(key: key);
+  const AnimatedGradientBackground({super.key, required this.child});
 
   @override
   State<AnimatedGradientBackground> createState() => _AnimatedGradientBackgroundState();

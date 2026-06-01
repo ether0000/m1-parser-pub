@@ -8,16 +8,19 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import '../../models/exam_question.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/data_importer.dart';
 import '../manage_questions_screen.dart';
 
 import '../../providers/app_provider.dart';
 
+/// 設定 Tab
+/// 
+/// 管理考期、資料匯入與清空、學習重置等功能。
 class SettingsTab extends StatefulWidget {
-  const SettingsTab({Key? key}) : super(key: key);
+  const SettingsTab({super.key});
 
   @override
   State<SettingsTab> createState() => _SettingsTabState();
@@ -32,26 +35,38 @@ class _SettingsTabState extends State<SettingsTab> {
     _loadExamDate();
   }
 
+  /// 載入考試日期：快取優先 (SharedPreferences) + 雲端同步 (Firestore) 複合策略
+  /// 
+  /// 讀取本地快取後快速呈現，隨後非同步從 Firestore 抓取最新考期。
+  /// 此處添加了變更檢查 `_examDate == null || !_examDate!.isAtSameMomentAs(remoteDate)`，
+  /// 只有在雲端考期與本地不一致時才調用 `setState()` 更新 UI，避免不必要的重新構建。
   Future<void> _loadExamDate() async {
-    // 1. Local cache
+    final service = Provider.of<FirestoreService>(context, listen: false);
     final prefs = await SharedPreferences.getInstance();
     final localDateStr = prefs.getString('examDate');
-    if (mounted && localDateStr != null) {
+    
+    DateTime? localDate;
+    if (localDateStr != null) {
+      localDate = DateTime.tryParse(localDateStr);
+    }
+
+    if (mounted && localDate != null) {
       setState(() {
-        _examDate = DateTime.tryParse(localDateStr);
+        _examDate = localDate;
       });
     }
 
-    // 2. Firestore sync
     try {
-      final service = Provider.of<FirestoreService>(context, listen: false);
       final remoteDate = await service.fetchExamDate();
       if (remoteDate != null && mounted) {
-        setState(() => _examDate = remoteDate);
+        // 唯有與當前日期不同時，才觸發 UI 更新
+        if (_examDate == null || !_examDate!.isAtSameMomentAs(remoteDate)) {
+          setState(() => _examDate = remoteDate);
+        }
         await prefs.setString('examDate', remoteDate.toIso8601String());
       }
     } catch (e) {
-      // Ignore background errors
+      // 靜默處理背景同步失敗（例如離線模式下無法連接雲端，維持本地緩存日期即可）
     }
   }
 
@@ -71,38 +86,52 @@ class _SettingsTabState extends State<SettingsTab> {
           SliverList(
             delegate: SliverChildListDelegate([
               const SizedBox(height: 20),
+              _buildSectionHeader('個人帳號'),
+              _buildSettingsGroup([
+                _buildSettingsItem(
+                  icon: CupertinoIcons.person_crop_circle,
+                  iconColor: const Color(0xFF007AFF),
+                  title: '當前帳號',
+                  subtitle: FirebaseAuth.instance.currentUser?.email ?? '已登入用戶',
+                  onTap: () {},
+                ),
+                _buildSettingsItem(
+                  icon: CupertinoIcons.square_arrow_right,
+                  iconColor: const Color(0xFFFF3B30),
+                  title: '登出帳號',
+                  subtitle: '登出後將返回登入畫面',
+                  onTap: _handleSignOut,
+                ),
+              ]),
+              const SizedBox(height: 32),
               _buildSectionHeader('考試時程'),
               _buildSettingsGroup([
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.calendar,
                   iconColor: const Color(0xFF5856D6),
                   title: '設定考試日期',
                   subtitle: _examDate == null ? '點此設定預計考試日期' : '目前設定: ${DateFormat('yyyy/MM/dd').format(_examDate!)}',
-                  onTap: () => _showDatePicker(context),
+                  onTap: _showDatePicker,
                 ),
               ]),
               const SizedBox(height: 32),
               _buildSectionHeader('資料管理'),
               _buildSettingsGroup([
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.cloud_upload,
                   iconColor: const Color(0xFF34C759),
                   title: '上傳外部 JSON 題庫',
                   subtitle: '從手機檔案選取 JSON 檔案匯入',
-                  onTap: () => _handleExternalImport(context, firestoreService),
+                  onTap: () => _handleExternalImport(firestoreService),
                 ),
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.cloud_download,
                   iconColor: const Color(0xFF007AFF),
                   title: '載入內建題庫',
                   subtitle: '匯入 assets/JSON/ 中的題目',
-                  onTap: () => _handleLocalImport(context, firestoreService),
+                  onTap: () => _handleLocalImport(firestoreService),
                 ),
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.pencil_ellipsis_rectangle,
                   iconColor: const Color(0xFF5856D6),
                   title: '管理現有題庫',
@@ -119,20 +148,18 @@ class _SettingsTabState extends State<SettingsTab> {
               _buildSectionHeader('危險區域'),
               _buildSettingsGroup([
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.trash,
                   iconColor: const Color(0xFFFF3B30),
                   title: '重置所有學習狀態',
                   subtitle: '清空進度與錯題紀錄，不可復原',
-                  onTap: () => _handleReset(context, firestoreService),
+                  onTap: () => _handleReset(firestoreService),
                 ),
                 _buildSettingsItem(
-                  context,
                   icon: CupertinoIcons.delete,
                   iconColor: const Color(0xFFFF3B30),
                   title: '清空所有題庫',
                   subtitle: '刪除 Firestore 中的所有題目資料',
-                  onTap: () => _handleDeleteAll(context, firestoreService),
+                  onTap: () => _handleDeleteAll(firestoreService),
                 ),
               ]),
               const SizedBox(height: 100),
@@ -143,7 +170,50 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
-  void _showDatePicker(BuildContext context) {
+  /// 處理帳號登出
+  void _handleSignOut() {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('確認登出？'),
+        content: const Text('登出後需要重新登入才能同步學習進度。'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            child: const Text('確認登出'),
+            onPressed: () async {
+              Navigator.pop(context);
+              
+              // 1. 重置 Provider 考試日期狀態
+              try {
+                final appProvider = Provider.of<AppProvider>(context, listen: false);
+                appProvider.resetExamDate();
+              } catch (e) {
+                // 靜默處理，防範 provider 在 context 重置時拋出錯誤
+              }
+
+              // 2. 清理本地考試日期快取
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('examDate');
+
+              // 3. 執行 Firebase 登出
+              await FirebaseAuth.instance.signOut();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 顯示考期選擇器
+  void _showDatePicker() {
+    final service = Provider.of<FirestoreService>(context, listen: false);
+    final navigator = Navigator.of(context);
+    
     showCupertinoModalPopup(
       context: context,
       builder: (context) => Container(
@@ -165,15 +235,11 @@ class _SettingsTabState extends State<SettingsTab> {
               child: const Text('完成設定'),
               onPressed: () async {
                 if (_examDate != null) {
-                  // Save to Firestore
-                  final service = Provider.of<FirestoreService>(context, listen: false);
                   await service.saveExamDate(_examDate!);
-                  
-                  // Save to Local
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setString('examDate', _examDate!.toIso8601String());
                 }
-                if (context.mounted) Navigator.pop(context);
+                if (mounted) navigator.pop();
               },
             )
           ],
@@ -182,7 +248,11 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
-  void _handleExternalImport(BuildContext context, FirestoreService firestoreService) async {
+  /// 處理外部 JSON 題庫匯入
+  void _handleExternalImport(FirestoreService firestoreService) async {
+    final navigator = Navigator.of(context);
+    final appProvider = Provider.of<AppProvider>(context, listen: false);
+    
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -198,57 +268,57 @@ class _SettingsTabState extends State<SettingsTab> {
           content = await file.readAsString(encoding: utf8);
         }
 
+        if (!mounted) return;
+        
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (c) => const Center(child: CupertinoActivityIndicator()),
+        );
 
-        if (context.mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (c) => const Center(child: CupertinoActivityIndicator()),
-          );
-        }
-
-        final appProvider = Provider.of<AppProvider>(context, listen: false);
         Set<String> existingIds = appProvider.questions.map((q) => q.id).toSet();
         await DataImporter.importJsonContent(content, firestoreService, existingIds);
 
-
-        if (context.mounted) {
-          Navigator.pop(context); // hide indicator
-          _showCupertinoAlert(context, '成功', '外部題庫匯入成功！');
-        }
+        if (!mounted) return;
+        navigator.pop(); // 關閉等待圈圈
+        _showCupertinoAlert('成功', '外部題庫匯入成功！');
       }
     } catch (e) {
-      if (context.mounted) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        _showCupertinoAlert(context, '失敗', '匯入失敗: $e');
-      }
+      if (!mounted) return;
+      if (navigator.canPop()) navigator.pop();
+      _showCupertinoAlert('失敗', '匯入失敗: $e');
     }
   }
 
-  void _handleLocalImport(BuildContext context, FirestoreService firestoreService) async {
+  /// 處理內建（本地 Assets）題庫匯入
+  void _handleLocalImport(FirestoreService firestoreService) async {
+    final navigator = Navigator.of(context);
+    final appProvider = Provider.of<AppProvider>(context, listen: false);
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (c) => const Center(child: CupertinoActivityIndicator()),
     );
+    
     try {
-      final appProvider = Provider.of<AppProvider>(context, listen: false);
       Set<String> existingIds = appProvider.questions.map((q) => q.id).toSet();
       await DataImporter.importLocalJson(firestoreService, existingIds);
 
-      if (context.mounted) {
-        Navigator.pop(context);
-        _showCupertinoAlert(context, '成功', '題庫更新成功！');
-      }
+      if (!mounted) return;
+      navigator.pop(); // 關閉等待圈圈
+      _showCupertinoAlert('成功', '題庫更新成功！');
     } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        _showCupertinoAlert(context, '失敗', '題庫更新失敗: $e');
-      }
+      if (!mounted) return;
+      navigator.pop(); // 關閉等待圈圈
+      _showCupertinoAlert('失敗', '題庫更新失敗: $e');
     }
   }
 
-  void _handleDeleteAll(BuildContext context, FirestoreService firestoreService) async {
+  /// 刪除 Firestore 中的所有題目
+  void _handleDeleteAll(FirestoreService firestoreService) async {
+    final navigator = Navigator.of(context);
+    
     showCupertinoDialog(
       context: context,
       builder: (c) => CupertinoAlertDialog(
@@ -263,36 +333,36 @@ class _SettingsTabState extends State<SettingsTab> {
             isDestructiveAction: true,
             child: const Text('確認清空'),
             onPressed: () async {
-              Navigator.pop(c);
-              // Show a more persistent loading indicator
+              Navigator.pop(c); // 關閉確認對話框
+              
+              if (!mounted) return;
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (c) => WillPopScope(
-                  onWillPop: () async => false, // Prevent back button
-                  child: const Center(
+                builder: (c) => const PopScope(
+                  canPop: false,
+                  child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CupertinoActivityIndicator(radius: 15),
                         SizedBox(height: 16),
-                        Text('正在刪除題庫，請稍候...', style: TextStyle(color: Colors.white, fontSize: 16)),
+                        Text('正在刪除題庫，請稍候...', style: TextStyle(color: Colors.white, fontSize: 16, decoration: TextDecoration.none)),
                       ],
                     ),
                   ),
                 ),
               );
+
               try {
                 await firestoreService.deleteAllQuestions();
-                if (context.mounted) {
-                  Navigator.pop(context); // hide indicator
-                  _showCupertinoAlert(context, '已清空', '題庫已全數刪除。');
-                }
+                if (!mounted) return;
+                navigator.pop(); // 關閉等待圈圈
+                _showCupertinoAlert('已清空', '題庫已全數刪除。');
               } catch (e) {
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  _showCupertinoAlert(context, '失敗', '刪除失敗: $e');
-                }
+                if (!mounted) return;
+                navigator.pop(); // 關閉等待圈圈
+                _showCupertinoAlert('失敗', '刪除失敗: $e');
               }
             },
           ),
@@ -301,7 +371,10 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
-  void _handleReset(BuildContext context, FirestoreService firestoreService) async {
+  /// 重置學習數據（但不刪除題目）
+  void _handleReset(FirestoreService firestoreService) async {
+    final appProvider = Provider.of<AppProvider>(context, listen: false);
+    
     showCupertinoDialog(
       context: context,
       builder: (c) => CupertinoAlertDialog(
@@ -317,11 +390,9 @@ class _SettingsTabState extends State<SettingsTab> {
             child: const Text('確認重置'),
             onPressed: () async {
               Navigator.pop(c);
-              final appProvider = Provider.of<AppProvider>(context, listen: false);
               await firestoreService.resetAllProgress(appProvider.questions);
-              if (context.mounted) {
-                _showCupertinoAlert(context, '已重置', '所有學習進度已歸零。');
-              }
+              if (!mounted) return;
+              _showCupertinoAlert('已重置', '所有學習進度已歸零。');
             },
           ),
         ],
@@ -329,7 +400,7 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
-  void _showCupertinoAlert(BuildContext context, String title, String message) {
+  void _showCupertinoAlert(String title, String message) {
     showCupertinoDialog(
       context: context,
       builder: (c) => CupertinoAlertDialog(
@@ -368,8 +439,7 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
-  Widget _buildSettingsItem(
-    BuildContext context, {
+  Widget _buildSettingsItem({
     required IconData icon,
     required Color iconColor,
     required String title,
@@ -386,7 +456,7 @@ class _SettingsTabState extends State<SettingsTab> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: iconColor, size: 22),

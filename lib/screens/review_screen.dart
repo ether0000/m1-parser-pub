@@ -1,18 +1,82 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../models/exam_question.dart';
 import '../services/firestore_service.dart';
 import '../utils/animated_background.dart';
 import '../utils/glassmorphism.dart';
 
-class ReviewScreen extends StatelessWidget {
+/// 考後提煉與錯題總結畫面
+/// 
+/// 展示本次測驗答錯的題目。
+/// 採用 [StatefulWidget] 來暫存用戶修改的筆記，並於使用者點擊「完成並返回看板」時
+/// 進行一次性批次儲存，避免原先在 `onChanged` 中每輸入一個字元即觸發一次雲端寫入的效能與費用問題。
+class ReviewScreen extends StatefulWidget {
   final List<ExamQuestion> wrongQuestions;
 
-  const ReviewScreen({Key? key, required this.wrongQuestions}) : super(key: key);
+  const ReviewScreen({super.key, required this.wrongQuestions});
+
+  @override
+  State<ReviewScreen> createState() => _ReviewScreenState();
+}
+
+class _ReviewScreenState extends State<ReviewScreen> {
+  // 記錄在此畫面中有被修改筆記的題目 ID
+  final Set<String> _dirtyQuestionIds = {};
+  bool _isSaving = false;
+
+  /// 執行批次儲存所有被修改的題目筆記
+  Future<void> _saveAndExit() async {
+    if (_dirtyQuestionIds.isEmpty) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    
+    final firestoreService = Provider.of<FirestoreService>(context, listen: false);
+    final navigator = Navigator.of(context);
+
+    try {
+      // 過濾出有修改的題目
+      final modifiedQuestions = widget.wrongQuestions
+          .where((q) => _dirtyQuestionIds.contains(q.id))
+          .toList();
+
+      // 使用批次更新機制
+      final Map<String, Map<String, dynamic>> updates = {};
+      for (var q in modifiedQuestions) {
+        updates[q.id] = {'userNote': q.userNote};
+      }
+      
+      await firestoreService.batchUpdateQuestionsFields(updates);
+      
+      if (mounted) {
+        navigator.popUntil((route) => route.isFirst);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        showCupertinoDialog(
+          context: context,
+          builder: (c) => CupertinoAlertDialog(
+            title: const Text('儲存失敗'),
+            content: Text('無法同步筆記至雲端：$e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('確定'),
+                onPressed: () => Navigator.pop(c),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (wrongQuestions.isEmpty) {
+    if (widget.wrongQuestions.isEmpty) {
       return Scaffold(
         extendBodyBehindAppBar: true,
         appBar: AppBar(
@@ -67,9 +131,9 @@ class ReviewScreen extends StatelessWidget {
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: wrongQuestions.length,
+                  itemCount: widget.wrongQuestions.length,
                   itemBuilder: (context, index) {
-                    ExamQuestion q = wrongQuestions[index];
+                    ExamQuestion q = widget.wrongQuestions[index];
                     List<String> labels = ['A', 'B', 'C', 'D'];
                     String correctLabels = q.correctAnswers
                         .map((idx) => idx < labels.length ? labels[idx] : '')
@@ -91,7 +155,10 @@ class ReviewScreen extends StatelessWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     margin: const EdgeInsets.only(right: 8),
-                                    decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
                                     child: Text('${q.year} 年 第 ${q.questionNumber} 題', style: const TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                                   ),
                                 Expanded(
@@ -111,9 +178,9 @@ class ReviewScreen extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.green.withOpacity(0.1),
+                                color: Colors.green.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.green.withOpacity(0.3))
+                                border: Border.all(color: Colors.green.withValues(alpha: 0.3))
                               ),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,7 +211,7 @@ class ReviewScreen extends StatelessWidget {
                               style: const TextStyle(color: Colors.black87),
                               decoration: InputDecoration(
                                 filled: true,
-                                fillColor: Colors.black.withOpacity(0.05),
+                                fillColor: Colors.black.withValues(alpha: 0.05),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12),
                                   borderSide: BorderSide.none,
@@ -154,8 +221,7 @@ class ReviewScreen extends StatelessWidget {
                               ),
                               onChanged: (val) {
                                 q.userNote = val;
-                                final firestoreService = Provider.of<FirestoreService>(context, listen: false);
-                                firestoreService.updateQuestion(q);
+                                _dirtyQuestionIds.add(q.id);
                               },
                             )
                           ],
@@ -177,10 +243,10 @@ class ReviewScreen extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
                     ),
-                    onPressed: () {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                    },
-                    child: const Text('完成並返回看板', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    onPressed: _isSaving ? null : _saveAndExit,
+                    child: _isSaving
+                        ? const CupertinoActivityIndicator(color: Colors.white)
+                        : const Text('完成並返回看板', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -190,6 +256,4 @@ class ReviewScreen extends StatelessWidget {
       ),
     );
   }
-
 }
-
