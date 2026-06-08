@@ -14,6 +14,8 @@ import 'screens/main_layout.dart';
 import 'screens/auth_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+bool _firebaseInitialized = false;
+
 void main() async {
   // 使用 runZonedGuarded 捕捉 Flutter 框架以外的未處理異步錯誤，
   // 這是生產環境下不可或缺的防禦措施，防止 App 因為底層非同步任務異常而無預警閃退。
@@ -43,8 +45,11 @@ void main() async {
         persistenceEnabled: true,
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
+      _firebaseInitialized = true;
     } catch (e) {
       developer.log("Firebase 初始化失敗", error: e);
+      debugPrint('Firebase initialization error: $e');
+      debugPrint('可能是因為正在使用 CI 的 Dummy Plist 進行測試。');
     }
     
     runApp(const QuizApp());
@@ -58,6 +63,37 @@ class QuizApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!_firebaseInitialized) {
+      return MaterialApp(
+        title: 'Quiz App',
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 64, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Firebase 初始化失敗',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '應用程式無法連接到 Firebase 服務。這可能是因為正在使用 CI 的 Dummy Plist 進行測試，或者是網路連線問題。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        debugShowCheckedModeBanner: false,
+      );
+    }
+
     return Provider<FirestoreService>(
       create: (_) => FirestoreService(),
       child: MaterialApp(

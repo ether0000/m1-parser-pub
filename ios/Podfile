@@ -1,3 +1,7 @@
+# 1. 透過標準變數鎖定 Firebase iOS 原生 SDK 版本，避免下載到拔除 initWithRef 的 11.x 版本
+$FirebaseSDKVersion = '10.24.0'
+
+# 2. 統一目標部署版本為 iOS 15.0
 platform :ios, '15.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = '1'
