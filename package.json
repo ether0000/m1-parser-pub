@@ -1,0 +1,28 @@
+{
+  "name": "m1-parser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "set-admin.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ether0000/m1-parser.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ether0000/m1-parser/issues"
+  },
+  "homepage": "https://github.com/ether0000/m1-parser#readme",
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
+  }
+}
