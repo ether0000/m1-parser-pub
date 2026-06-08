@@ -61,15 +61,17 @@ post_install do |installer|
     end
   end
 
-  # 3. 修正 gRPC-Core 在 Xcode 15/16 嚴格 C++ 檢查下導致的 Template 語法解析錯誤
-  grpc_seq_file = File.join('Pods', 'gRPC-Core', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')
-  if File.exist?(grpc_seq_file)
-    content = File.read(grpc_seq_file)
-    # 將舊版語法 Traits::template CallSeqFactory( 替換為相容的 Traits::CallSeqFactory(
-    if content.include?('Traits::template CallSeqFactory(')
-      content = content.gsub('Traits::template CallSeqFactory(', 'Traits::CallSeqFactory(')
-      File.write(grpc_seq_file, content)
-      puts "✅ Patched gRPC-Core basic_seq.h for Xcode 15/16 compatibility."
+  # 3. 擴大範圍：同時修正 gRPC-Core 與 gRPC-C++ 的 Template 語法解析錯誤
+  # 使用 Dir.glob 自動找尋 Pods 底下所有符合路徑的 basic_seq.h 檔案並進行替換
+  Dir.glob(File.join('Pods', 'gRPC-*', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')).each do |grpc_seq_file|
+    if File.exist?(grpc_seq_file)
+      content = File.read(grpc_seq_file)
+      # 將舊版語法 Traits::template CallSeqFactory( 替換為相容的 Traits::CallSeqFactory(
+      if content.include?('Traits::template CallSeqFactory(')
+        content = content.gsub('Traits::template CallSeqFactory(', 'Traits::CallSeqFactory(')
+        File.write(grpc_seq_file, content)
+        puts "✅ Patched #{grpc_seq_file} for Xcode 15/16 compatibility."
+      end
     end
   end
 end
