@@ -1,7 +1,3 @@
-# 1. 透過標準變數鎖定 Firebase iOS 原生 SDK 版本，避免下載到拔除 initWithRef 的 11.x 版本
-$FirebaseSDKVersion = '10.24.0'
-
-# 2. 統一目標部署版本為 iOS 15.0
 platform :ios, '15.0'
 
 ENV['COCOAPODS_DISABLE_STATS'] = '1'
@@ -43,35 +39,10 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # 1. 強制所有套件目標部署到 iOS 15.0
+    # 只需要保留統一提升 iOS Deployment Target 到 15.0 即可
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-    end
-    
-    # 2. 修正 BoringSSL-GRPC 在 Xcode 15/16 導致的 '-G' 錯誤
-    if target.name == 'BoringSSL-GRPC'
-      target.source_build_phase.files.each do |file|
-        if file.settings && file.settings['COMPILER_FLAGS']
-          flags = file.settings['COMPILER_FLAGS'].split
-          flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
-          file.settings['COMPILER_FLAGS'] = flags.join(' ')
-        end
-      end
-    end
-  end
-
-  # 3. 擴大範圍：同時修正 gRPC-Core 與 gRPC-C++ 的 Template 語法解析錯誤
-  # 使用 Dir.glob 自動找尋 Pods 底下所有符合路徑的 basic_seq.h 檔案並進行替換
-  Dir.glob(File.join('Pods', 'gRPC-*', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')).each do |grpc_seq_file|
-    if File.exist?(grpc_seq_file)
-      content = File.read(grpc_seq_file)
-      # 將舊版語法 Traits::template CallSeqFactory( 替換為相容的 Traits::CallSeqFactory(
-      if content.include?('Traits::template CallSeqFactory(')
-        content = content.gsub('Traits::template CallSeqFactory(', 'Traits::CallSeqFactory(')
-        File.write(grpc_seq_file, content)
-        puts "✅ Patched #{grpc_seq_file} for Xcode 15/16 compatibility."
-      end
     end
   end
 end
