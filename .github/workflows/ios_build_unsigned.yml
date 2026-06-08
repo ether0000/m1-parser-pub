@@ -43,23 +43,20 @@ jobs:
             echo '  <key>API_KEY</key><string>dummy_api_key</string>' >> ios/Runner/GoogleService-Info.plist
             echo '  <key>GCM_SENDER_ID</key><string>1234567890</string>' >> ios/Runner/GoogleService-Info.plist
             echo '  <key>PLIST_VERSION</key><string>1</string>' >> ios/Runner/GoogleService-Info.plist
-            echo '  <key>PROJECT_ID</key><string>dummy-project-id</string>' >> ios/Runner/GoogleService-Info.tsv
+            echo '  <key>PROJECT_ID</key><string>dummy-project-id</string>' >> ios/Runner/GoogleService-Info.plist
             echo '  <key>STORAGE_BUCKET</key><string>dummy.appspot.com</string>' >> ios/Runner/GoogleService-Info.plist
             echo '  <key>GOOGLE_APP_ID</key><string>1:1234567890:ios:abcdefg123456</string>' >> ios/Runner/GoogleService-Info.plist
             echo '</dict>' >> ios/Runner/GoogleService-Info.plist
             echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
-      # 5. 強制校正 Xcode 專案檔的 Deployment Target 至 15.0，完美契合 Firebase
+      # 5. 強制校正 Xcode 專案檔的 Deployment Target 至 15.0 (移除 config-only 陷阱)
       - name: Force Xcode Target to iOS 15.0
         run: |
           echo "Setting IPHONEOS_DEPLOYMENT_TARGET to 15.0 in pbxproj..."
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/Runner.xcodeproj/project.pbxproj
-          
-          echo "Regenerating iOS configuration..."
-          flutter build ios --config-only
 
-      # 6. 執行編譯 iOS
+      # 6. 執行編譯 iOS (直接帶上 --no-codesign 繞過憑證檢查)
       - name: Build iOS (No Codesign)
         run: |
           flutter clean
