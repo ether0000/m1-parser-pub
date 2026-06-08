@@ -1,10 +1,10 @@
 name: Build iOS IPA (Unsigned)
 
 on:
-  workflow_dispatch: # 保留手動按鈕，以備不時之需
-  push:              # 只要有 push 就觸發
+  workflow_dispatch: # 保留手動按鈕
+  push:              
     branches:
-      - main         # 請確認你的預設分支是 main 還是 master
+      - main         
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -15,22 +15,22 @@ jobs:
     runs-on: macos-latest 
 
     steps:
-      # 1. 取得你的程式碼
+      # 1. 取得程式碼
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 設定 Flutter 環境 (自動下載並安裝 Flutter)
+      # 2. 設定 Flutter 環境
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable' # 使用穩定版 Flutter
-          cache: true       # 開啟快取加快後續編譯速度
+          channel: 'stable'
+          cache: true       
 
       # 3. 下載專案所需的套件
       - name: Install Dependencies
         run: flutter pub get
 
-      # 4. 確保 Firebase iOS 設定存在 (建立 mock 檔案避免編譯失敗)
+      # 4. 確保 Firebase iOS 設定存在
       - name: Setup Mock Firebase Config
         run: |
           mkdir -p ios/Runner
@@ -50,38 +50,36 @@ jobs:
             echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
-      # 5. 強制校正 Xcode 部署目標至 15.0，並鎖定 Firebase SDK 版本避免 API 斷裂
+      # 5. 強制將專案所有 Deployment Target 對齊至 iOS 15.0，並鎖定 Firebase SDK 版本
       - name: Force Xcode Target and Lock Firebase SDK Version
         run: |
           echo "Setting IPHONEOS_DEPLOYMENT_TARGET to 15.0 in pbxproj..."
-          # 將 Xcode 專案檔內所有的部署目標全部強制重寫為 15.0，以符合新版 Firebase 的硬性需求
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/Runner.xcodeproj/project.pbxproj
           
           echo "Forcing CocoaPods platform to 15.0..."
           sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '15.0'/g" ios/Podfile || true
           
           echo "Locking Firebase SwiftPM SDK Version to 10.24.0..."
-          # 關鍵保險：利用 Flutter 隱藏設定強制鎖定 Firebase 原生 iOS SDK 版本，防止其拉到破壞性更新的 11+ 以上版本
+          # 關鍵修正：透過 Flutter 的隱藏設定，強制 SwiftPM 將 Firebase 原生庫鎖定在相容的 10.24.0 版本
+          # 這樣就不會下載到拔除 initWithRef 方法的 11.x 以上原生庫
           echo "firebase_sdk_version: 10.24.0" >> pubspec.yaml
 
-      # 6. 執行編譯 iOS (直接帶上 --no-codesign 繞過憑證檢查，且不使用 --config-only)
+      # 6. 執行編譯 iOS (移除 config-only 憑證陷阱，直接無簽名釋出)
       - name: Build iOS (No Codesign)
         run: |
           flutter clean
           flutter pub get
           flutter build ios --release --no-codesign
 
-      # 7. 將編譯出的 Runner.app 打包成 .ipa 檔案
-      - name: Create IPA payload
+      # 7. 安全打包成 .ipa 檔案
+      - name: Create IPA Payload
         run: |
           mkdir -p Payload
-          # 使用 cp -r 複製，保留原始 build 結構
           cp -r build/ios/iphoneos/Runner.app Payload/
-          # 加上 -y 參數，完整保留 iOS Framework 的符號連結 (Symlinks)，避免 ipa 檔案損壞
           zip -r -y app.ipa Payload
           rm -rf Payload
 
-      # 8. 將打包好的 .ipa 檔案上傳為「產物 (Artifact)」，供我們下載
+      # 8. 上傳不簽名的 IPA 產物
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
