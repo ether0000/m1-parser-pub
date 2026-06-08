@@ -43,23 +43,33 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # 1. 強制將所有第三方套件的 iOS 部署版本提升至 15.0
+    # 1. 強制所有套件目標部署到 iOS 15.0
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
     end
     
-    # 2. 針對 BoringSSL-GRPC 的 Xcode 15/16 "-G" 編譯錯誤修正
+    # 2. 修正 BoringSSL-GRPC 在 Xcode 15/16 導致的 '-G' 錯誤
     if target.name == 'BoringSSL-GRPC'
       target.source_build_phase.files.each do |file|
         if file.settings && file.settings['COMPILER_FLAGS']
           flags = file.settings['COMPILER_FLAGS'].split
-          # 剔除會導致崩潰的編譯標籤
           flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
           file.settings['COMPILER_FLAGS'] = flags.join(' ')
         end
       end
     end
-    
+  end
+
+  # 3. 修正 gRPC-Core 在 Xcode 15/16 嚴格 C++ 檢查下導致的 Template 語法解析錯誤
+  grpc_seq_file = File.join('Pods', 'gRPC-Core', 'src', 'core', 'lib', 'promise', 'detail', 'basic_seq.h')
+  if File.exist?(grpc_seq_file)
+    content = File.read(grpc_seq_file)
+    # 將舊版語法 Traits::template CallSeqFactory( 替換為相容的 Traits::CallSeqFactory(
+    if content.include?('Traits::template CallSeqFactory(')
+      content = content.gsub('Traits::template CallSeqFactory(', 'Traits::CallSeqFactory(')
+      File.write(grpc_seq_file, content)
+      puts "✅ Patched gRPC-Core basic_seq.h for Xcode 15/16 compatibility."
+    end
   end
 end
