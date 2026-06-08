@@ -43,12 +43,23 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # 加入這段：強制將所有第三方套件的 iOS 部署版本設定為 15.0
+    # 1. 強制將所有第三方套件的 iOS 部署版本提升至 15.0
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-      
-      # 為了保險起見，關閉這可能會在舊套件引發錯誤的設定
       config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
     end
+    
+    # 2. 針對 BoringSSL-GRPC 的 Xcode 15/16 "-G" 編譯錯誤修正
+    if target.name == 'BoringSSL-GRPC'
+      target.source_build_phase.files.each do |file|
+        if file.settings && file.settings['COMPILER_FLAGS']
+          flags = file.settings['COMPILER_FLAGS'].split
+          # 剔除會導致崩潰的編譯標籤
+          flags.reject! { |flag| flag == '-GCC_WARN_INHIBIT_ALL_WARNINGS' }
+          file.settings['COMPILER_FLAGS'] = flags.join(' ')
+        end
+      end
+    end
+    
   end
 end
