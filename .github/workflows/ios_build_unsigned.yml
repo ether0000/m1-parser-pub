@@ -50,13 +50,16 @@ jobs:
             echo '</plist>' >> ios/Runner/GoogleService-Info.plist
           fi
 
-      # 5. 強制校正 Xcode 專案檔的 Deployment Target 至 15.0 (移除 config-only 陷阱)
-      - name: Force Xcode Target to iOS 15.0
+      # 5. 強制校正 Xcode 專案檔的 Deployment Target，並強制鎖定相容的 Firebase SDK 版本
+      - name: Force Xcode Target and Lock Firebase SDK Version
         run: |
           echo "Setting IPHONEOS_DEPLOYMENT_TARGET to 15.0 in pbxproj..."
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' ios/Runner.xcodeproj/project.pbxproj
+          
+          # 修正重點：告訴 Flutter 內建的 SwiftPM 機制，Firebase 原生庫請使用相容的 10.24.0 版本，避免拉到過新導致 API 斷裂
+          echo "firebase_sdk_version: 10.24.0" >> pubspec.yaml || true
 
-      # 6. 執行編譯 iOS (直接帶上 --no-codesign 繞過憑證檢查)
+      # 6. 執行編譯 iOS
       - name: Build iOS (No Codesign)
         run: |
           flutter clean
