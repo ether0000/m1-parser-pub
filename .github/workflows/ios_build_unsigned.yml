@@ -3,7 +3,84 @@ name: Build iOS IPA (Unsigned)
 on:
   workflow_dispatch: # 保留手動按鈕，以備不時之需
   push:              # 加入這一行，代表只要有 push 就觸發
+    branches:name: Build iOS IPA (Unsigned)
+
+on:
+  workflow_dispatch: # 保留手動按鈕
+  push:              
     branches:
+      - main         
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build_ios:
+    name: Build iOS App
+    runs-on: macos-latest 
+
+    steps:
+      # 1. 取得程式碼
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 設定 Flutter 環境
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true       
+
+      # 3. 下載專案所需的套件
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 4. 確保 Firebase iOS 設定存在 (避免編譯失敗)
+      - name: Setup Mock Firebase Config
+        run: |
+          mkdir -p ios/Runner
+          if [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "Creating dummy GoogleService-Info.plist to satisfy build"
+            cat <<EOF > ios/Runner/GoogleService-Info.plist
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>API_KEY</key><string>dummy_api_key</string>
+              <key>GCM_SENDER_ID</key><string>1234567890</string>
+              <key>PLIST_VERSION</key><string>1</string>
+              <key>PROJECT_ID</key><string>dummy-project-id</string>
+              <key>STORAGE_BUCKET</key><string>dummy.appspot.com</string>
+              <key>GOOGLE_APP_ID</key><string>1:1234567890:ios:abcdefg123456</string>
+            </dict>
+            </plist>
+            EOF
+          fi
+
+      # 5. 執行編譯 iOS (清理並建置)
+      - name: Build iOS (No Codesign)
+        run: |
+          flutter clean
+          flutter pub get
+          flutter build ios --release --no-codesign
+
+      # 6. 安全打包成 .ipa 檔案 (修正重點)
+      - name: Create IPA Payload
+        run: |
+          mkdir -p Payload
+          # 使用 cp -r 複製而非 mv，保留原始 build 結構以防萬一
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          # 關鍵：使用 -r 搭配 -y 以正確壓縮並保留 iOS Framework 的 symlinks
+          zip -r -y app.ipa Payload
+          # 清理暫存的 Payload 資料夾
+          rm -rf Payload
+
+      # 7. 上傳不簽名的 IPA 產物
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: app.ipa
       - main         # 請確認你的預設分支是 main 還是 master
 
 env:
