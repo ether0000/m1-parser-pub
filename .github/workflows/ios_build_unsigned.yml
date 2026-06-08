@@ -29,7 +29,9 @@ jobs:
           cache: true       
 
       - name: Install Dependencies
-        run: flutter pub get
+        run: |
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
 
       # 保留產生 Dummy Plist 的步驟，這是編譯 Unsigned IPA 必需的
       - name: Setup Mock Firebase Config
